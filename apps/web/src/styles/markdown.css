@@ -1,0 +1,228 @@
+/* Tipografia de leitura das respostas */
+.md {
+  font-size: var(--text-base);
+  line-height: var(--leading-read);
+  overflow-wrap: anywhere;
+}
+
+.md > * + * {
+  margin-top: var(--space-4);
+}
+
+.md ul,
+.md ol {
+  padding-left: 1.5rem;
+}
+
+.md li + li {
+  margin-top: var(--space-1);
+}
+
+.md li > ul,
+.md li > ol,
+.md li > p + p {
+  margin-top: var(--space-1);
+}
+
+.md li::marker {
+  color: var(--color-text-faint);
+}
+
+.md-task {
+  list-style: none;
+  margin-left: -1.25rem;
+}
+
+.md-task__box {
+  margin-right: var(--space-2);
+  color: var(--color-accent);
+}
+
+.md-h {
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.01em;
+}
+
+.md-h--2 {
+  font-family: var(--font-display);
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  margin-top: var(--space-6) !important;
+}
+
+.md-h--3 {
+  font-size: 1.0625rem;
+  margin-top: var(--space-5) !important;
+}
+
+.md-h--4 {
+  font-size: var(--text-base);
+}
+
+.md > :first-child {
+  margin-top: 0 !important;
+}
+
+.md blockquote {
+  margin: 0;
+  padding: var(--space-1) 0 var(--space-1) var(--space-4);
+  border-left: 3px solid var(--color-ember);
+  color: var(--color-text-muted);
+}
+
+.md blockquote > * + * {
+  margin-top: var(--space-2);
+}
+
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  margin: var(--space-6) 0;
+}
+
+.md-code-inline {
+  padding: 0.1em 0.38em;
+  border-radius: 5px;
+  background: var(--color-code-bg);
+  border: 1px solid var(--color-code-border);
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+}
+
+.md-raw-html {
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  white-space: pre-wrap;
+}
+
+/* Tabelas */
+.md-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.md table {
+  width: 100%;
+  overflow-wrap: normal;
+  word-break: normal;
+  border-collapse: collapse;
+  font-size: var(--text-md);
+  line-height: var(--leading-ui);
+}
+
+.md th,
+.md td {
+  padding: var(--space-2) var(--space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--color-border);
+  vertical-align: top;
+}
+
+.md th {
+  background: var(--color-code-bg);
+  font-weight: var(--weight-semibold);
+  white-space: nowrap;
+}
+
+.md tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.md tbody tr:hover {
+  background: var(--color-hover);
+}
+
+/* Blocos de código */
+.code-block {
+  border: 1px solid var(--color-code-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-code-bg);
+  overflow: hidden;
+}
+
+.code-block__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 2.25rem;
+  padding: 0 var(--space-2) 0 var(--space-4);
+  border-bottom: 1px solid var(--color-code-border);
+}
+
+.code-block__lang {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  text-transform: lowercase;
+}
+
+.code-block__pre {
+  margin: 0;
+  padding: var(--space-4);
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.code-block__pre code {
+  font-family: inherit;
+}
+
+/* Tema de realce próprio, ligado aos tokens */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-built_in {
+  color: var(--syntax-keyword);
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol,
+.hljs-template-tag {
+  color: var(--syntax-string);
+}
+
+.hljs-number,
+.hljs-variable.constant_ {
+  color: var(--syntax-number);
+}
+
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--syntax-comment);
+  font-style: italic;
+}
+
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: var(--syntax-title);
+}
+
+.hljs-type,
+.hljs-title.class_,
+.hljs-params {
+  color: var(--syntax-type);
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-name,
+.hljs-property {
+  color: var(--syntax-attr);
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: var(--weight-semibold);
+}

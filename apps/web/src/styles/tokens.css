@@ -1,0 +1,184 @@
+/*
+ * Forja — design tokens.
+ * Paleta: grafite quente + verdete (cobre oxidado) como acento, âmbar para atenção.
+ * Todos os componentes consomem estes tokens; nenhuma cor literal fora deste ficheiro.
+ * Pares texto/fundo verificados para contraste ≥ 4.5:1 (ver docs/03-frontend.md).
+ */
+:root {
+  /* Tipografia */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Iowan Old Style', 'Palatino Linotype', Palatino, 'Book Antiqua', Georgia, serif;
+  --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+
+  --text-xs: 0.75rem;   /* 12 */
+  --text-sm: 0.8125rem; /* 13 */
+  --text-md: 0.875rem;  /* 14 */
+  --text-base: 1rem;    /* 16 — leitura */
+  --text-lg: 1.25rem;   /* 20 */
+  --text-xl: 1.5rem;    /* 24 */
+  --text-2xl: 2.125rem; /* 34 */
+
+  --leading-tight: 1.25;
+  --leading-ui: 1.45;
+  --leading-read: 1.68;
+
+  --weight-regular: 400;
+  --weight-medium: 520;
+  --weight-semibold: 620;
+
+  /* Espaço (base 4 px) */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+
+  /* Forma */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-pill: 999px;
+
+  /* Layout */
+  --sidebar-width: 280px;
+  --reading-width: 46rem;
+  --topbar-height: 3.25rem;
+
+  /* Movimento */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --duration-fast: 120ms;
+  --duration-base: 180ms;
+  --duration-slow: 260ms;
+
+  /* Tema claro (por defeito) */
+  --color-bg: #f6f5f1;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-sidebar: #edece6;
+  --color-hover: rgba(27, 29, 28, 0.055);
+  --color-active: rgba(27, 29, 28, 0.09);
+  --color-border: #dedcd3;
+  --color-border-strong: #c9c6bb;
+  --color-text: #1b1d1c;
+  --color-text-muted: #575c59;
+  --color-text-faint: #646965;
+  --color-accent: #1d7466;
+  --color-accent-strong: #145a4f;
+  --color-accent-soft: #dcede8;
+  --color-on-accent: #ffffff;
+  --color-ember: #a84b1a;
+  --color-ember-soft: #f8e7dc;
+  --color-danger: #b42318;
+  --color-danger-soft: #fbe6e3;
+  --color-user-bubble: #e9e7e0;
+  --color-code-bg: #f1f0eb;
+  --color-code-border: #e2e0d8;
+  --color-focus: #1d7466;
+  --color-scrim: rgba(20, 22, 21, 0.38);
+
+  --shadow-sm: 0 1px 2px rgba(20, 22, 21, 0.06);
+  --shadow-md: 0 2px 6px rgba(20, 22, 21, 0.06), 0 8px 24px rgba(20, 22, 21, 0.06);
+  --shadow-lg: 0 12px 40px rgba(20, 22, 21, 0.16);
+
+  /* Realce de sintaxe */
+  --syntax-keyword: #7a2fe0;
+  --syntax-string: #1f7a3a;
+  --syntax-number: #a84b1a;
+  --syntax-comment: #616662;
+  --syntax-title: #0b62a8;
+  --syntax-type: #9a5b00;
+  --syntax-attr: #b0306a;
+
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --color-bg: #121413;
+    --color-surface: #171a19;
+    --color-surface-raised: #1e2220;
+    --color-sidebar: #0e100f;
+    --color-hover: rgba(232, 234, 230, 0.06);
+    --color-active: rgba(232, 234, 230, 0.1);
+    --color-border: #2a2f2d;
+    --color-border-strong: #3a403d;
+    --color-text: #e8eae6;
+    --color-text-muted: #a3aaa5;
+    --color-text-faint: #8a918c;
+    --color-accent: #4fc1ac;
+    --color-accent-strong: #7ad6c4;
+    --color-accent-soft: #15302a;
+    --color-on-accent: #07211c;
+    --color-ember: #e8996a;
+    --color-ember-soft: #33231a;
+    --color-danger: #f3786f;
+    --color-danger-soft: #3a1f1c;
+    --color-user-bubble: #23282a;
+    --color-code-bg: #0d0f0e;
+    --color-code-border: #262b29;
+    --color-focus: #4fc1ac;
+    --color-scrim: rgba(0, 0, 0, 0.55);
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.35), 0 8px 28px rgba(0, 0, 0, 0.3);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+    --syntax-keyword: #c3a6ff;
+    --syntax-string: #8fd694;
+    --syntax-number: #f0a879;
+    --syntax-comment: #8a918c;
+    --syntax-title: #82c4ff;
+    --syntax-type: #f2c56b;
+    --syntax-attr: #f39cc3;
+    color-scheme: dark;
+  }
+}
+
+:root[data-theme='dark'] {
+  --color-bg: #121413;
+  --color-surface: #171a19;
+  --color-surface-raised: #1e2220;
+  --color-sidebar: #0e100f;
+  --color-hover: rgba(232, 234, 230, 0.06);
+  --color-active: rgba(232, 234, 230, 0.1);
+  --color-border: #2a2f2d;
+  --color-border-strong: #3a403d;
+  --color-text: #e8eae6;
+  --color-text-muted: #a3aaa5;
+  --color-text-faint: #8a918c;
+  --color-accent: #4fc1ac;
+  --color-accent-strong: #7ad6c4;
+  --color-accent-soft: #15302a;
+  --color-on-accent: #07211c;
+  --color-ember: #e8996a;
+  --color-ember-soft: #33231a;
+  --color-danger: #f3786f;
+  --color-danger-soft: #3a1f1c;
+  --color-user-bubble: #23282a;
+  --color-code-bg: #0d0f0e;
+  --color-code-border: #262b29;
+  --color-focus: #4fc1ac;
+  --color-scrim: rgba(0, 0, 0, 0.55);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 8px rgba(0, 0, 0, 0.35), 0 8px 28px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.55);
+  --syntax-keyword: #c3a6ff;
+  --syntax-string: #8fd694;
+  --syntax-number: #f0a879;
+  --syntax-comment: #8a918c;
+  --syntax-title: #82c4ff;
+  --syntax-type: #f2c56b;
+  --syntax-attr: #f39cc3;
+  color-scheme: dark;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-base: 0ms;
+    --duration-slow: 0ms;
+  }
+}
