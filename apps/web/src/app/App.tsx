@@ -1,19 +1,56 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { User } from '../../../../shared/contract.ts';
 import { Composer } from '../components/Composer.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
-import { Icon } from '../components/Icon.tsx';
+import { Icon, Logo } from '../components/Icon.tsx';
 import { MessageList } from '../components/MessageList.tsx';
-import { Sidebar } from '../components/Sidebar.tsx';
-import type { ConversationRepository } from '../features/chat/repository.ts';
+import { Sidebar, type LegacyOffer } from '../components/Sidebar.tsx';
+import { Toasts } from '../components/Toasts.tsx';
+import { AuthScreen } from '../features/auth/AuthScreen.tsx';
+import { useAuth } from '../features/auth/useAuth.ts';
+import { browserStorage, clearLegacy, readLegacy } from '../features/chat/legacy.ts';
 import { sortedConversations } from '../features/chat/store.ts';
 import { useChat } from '../features/chat/useChat.ts';
 import { useTheme } from '../features/theme/useTheme.ts';
+import { api } from '../lib/api.ts';
 import { useMediaQuery } from '../lib/useMediaQuery.ts';
 
 const SIDEBAR_ID = 'app-sidebar';
 
-export function App({ repository }: { repository: ConversationRepository }) {
-  const chat = useChat(repository);
+/** Raiz: decide entre verificação de sessão, ecrã de entrada e aplicação. */
+export function Root() {
+  const auth = useAuth();
+  const s = auth.state;
+  if (s.status === 'checking') {
+    return (
+      <div className="splash" role="status" aria-label="A carregar">
+        <Logo size={44} />
+      </div>
+    );
+  }
+  if (s.status === 'offline') {
+    return (
+      <div className="splash">
+        <div className="splash__card" role="alert">
+          <Icon name="alert" size={22} />
+          <p>Não foi possível contactar o servidor.</p>
+          <p className="splash__detail">{s.message}</p>
+          <button type="button" className="btn btn--primary" onClick={() => void auth.check()}>
+            Tentar de novo
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (s.status === 'signed-out') {
+    return <AuthScreen signupEnabled={s.signupEnabled} expired={s.expired} onLogin={auth.login} onSignup={auth.signup} />;
+  }
+  // A key garante estado limpo ao trocar de conta no mesmo separador.
+  return <ChatApp key={s.user.id} user={s.user} onLogout={auth.logout} />;
+}
+
+function ChatApp({ user, onLogout }: { user: User; onLogout(): Promise<void> }) {
+  const chat = useChat();
   const { theme, setTheme } = useTheme();
   const compact = useMediaQuery('(max-width: 899px)');
   const [desktopOpen, setDesktopOpen] = useState(true);
@@ -22,6 +59,39 @@ export function App({ repository }: { repository: ConversationRepository }) {
 
   const conversations = useMemo(() => sortedConversations(chat.state), [chat.state]);
   const active = chat.active;
+
+  // ---- Importação do histórico da Fase 2 ----
+  const [legacyCount, setLegacyCount] = useState(() => readLegacy(browserStorage()).length);
+  const [importing, setImporting] = useState(false);
+  const { reloadList, notify } = chat;
+  const legacy: LegacyOffer | null = useMemo(
+    () =>
+      legacyCount > 0
+        ? {
+            count: legacyCount,
+            busy: importing,
+            onImport: async () => {
+              setImporting(true);
+              try {
+                const { imported } = await api.importLocal({ conversations: readLegacy(browserStorage()) });
+                clearLegacy(browserStorage());
+                setLegacyCount(0);
+                reloadList();
+                notify(`Importadas ${imported.conversations} conversas e ${imported.files} anexos.`);
+              } catch (err) {
+                notify(`A importação falhou: ${(err as Error).message}`);
+              } finally {
+                setImporting(false);
+              }
+            },
+            onDiscard: () => {
+              clearLegacy(browserStorage());
+              setLegacyCount(0);
+            },
+          }
+        : null,
+    [legacyCount, importing, reloadList, notify],
+  );
 
   useEffect(() => {
     if (!compact) setDrawerOpen(false);
@@ -54,6 +124,42 @@ export function App({ repository }: { repository: ConversationRepository }) {
 
   const generatingId = chat.state.generation?.conversationId ?? null;
 
+  let thread;
+  if (active && !active.loaded) {
+    thread = chat.activeLoadError ? (
+      <div className="thread thread--empty">
+        <div className="callout callout--danger" role="alert">
+          <Icon name="alert" size={18} />
+          <div className="callout__body">
+            <p className="callout__title">Não foi possível abrir a conversa.</p>
+            <p className="callout__text">{chat.activeLoadError}</p>
+          </div>
+          <button type="button" className="btn btn--secondary btn--sm" onClick={() => void chat.retryLoad(active.id)}>
+            Tentar de novo
+          </button>
+        </div>
+      </div>
+    ) : (
+      <div className="thread thread--empty" role="status" aria-label="A carregar conversa">
+        <div className="thread-skeleton">
+          <span className="skeleton thread-skeleton__user" />
+          <span className="skeleton thread-skeleton__line" />
+          <span className="skeleton thread-skeleton__line thread-skeleton__line--short" />
+        </div>
+      </div>
+    );
+  } else if (active && active.messages.length > 0) {
+    thread = (
+      <MessageList conversationId={active.id} messages={active.messages} isGenerating={chat.isGenerating} onRegenerate={chat.regenerate} />
+    );
+  } else {
+    thread = (
+      <div className="thread thread--empty">
+        <EmptyState disabled={chat.isGenerating || !chat.selectedModel} onPick={(prompt) => chat.send(prompt)} />
+      </div>
+    );
+  }
+
   return (
     <div className="app" data-sidebar={sidebarVisible ? 'open' : 'closed'} data-compact={compact}>
       <a className="skip-link" href="#composer-input">
@@ -63,11 +169,14 @@ export function App({ repository }: { repository: ConversationRepository }) {
       {sidebarVisible ? (
         <Sidebar
           id={SIDEBAR_ID}
+          user={user}
           conversations={conversations}
+          list={chat.list}
           activeId={chat.state.activeId}
           generatingId={generatingId}
           isGenerating={chat.isGenerating}
           theme={theme}
+          legacy={legacy}
           onTheme={setTheme}
           onNew={() => {
             chat.newConversation();
@@ -77,8 +186,12 @@ export function App({ repository }: { repository: ConversationRepository }) {
             chat.select(id);
             afterNavigate();
           }}
-          onRename={chat.rename}
-          onDelete={chat.remove}
+          onRename={(id, title) => void chat.rename(id, title)}
+          onDelete={(id) => void chat.remove(id)}
+          onLoadMore={chat.loadMore}
+          onRetryList={() => chat.reloadList()}
+          onLogout={() => void onLogout()}
+          search={chat.search}
           onCollapse={toggleSidebar}
           collapseLabel={compact ? 'Fechar menu' : 'Recolher barra lateral'}
           collapseIcon={compact ? 'close' : 'sidebar'}
@@ -119,25 +232,11 @@ export function App({ repository }: { repository: ConversationRepository }) {
           </span>
         </header>
 
-        {active && active.messages.length > 0 ? (
-          <MessageList
-            conversationId={active.id}
-            messages={active.messages}
-            isGenerating={chat.isGenerating}
-            onRegenerate={chat.regenerate}
-          />
-        ) : (
-          <div className="thread thread--empty">
-            <EmptyState
-              disabled={chat.isGenerating || !chat.selectedModel}
-              onPick={(prompt) => chat.send(prompt)}
-            />
-          </div>
-        )}
+        {thread}
 
         <Composer
           isGenerating={chat.isGenerating}
-          canSend={chat.selectedModel !== null && !chat.isGenerating}
+          canSend={chat.selectedModel !== null && !chat.isGenerating && (!active || active.loaded)}
           models={chat.models}
           selectedModel={chat.selectedModel}
           onSelectModel={chat.chooseModel}
@@ -147,6 +246,7 @@ export function App({ repository }: { repository: ConversationRepository }) {
           autoFocusKey={chat.state.activeId ?? 'new'}
         />
       </main>
+      <Toasts notices={chat.notices} onDismiss={chat.dismissNotice} />
     </div>
   );
 }

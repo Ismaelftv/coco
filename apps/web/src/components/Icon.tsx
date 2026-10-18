@@ -29,6 +29,7 @@ const PATHS = {
   arrowDown: 'M10 4v12M5 11l5 5 5-5',
   file: 'M11.5 3H6a1 1 0 0 0-1 1v12a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V6.5L11.5 3ZM11.5 3v3.5H15',
   spark: 'M10 3v4M10 13v4M3 10h4M13 10h4',
+  logout: 'M8 16.5H4.5a1 1 0 0 1-1-1v-11a1 1 0 0 1 1-1H8M13 13.5 16.5 10 13 6.5M16.5 10H8',
 } as const;
 
 export type IconName = keyof typeof PATHS;

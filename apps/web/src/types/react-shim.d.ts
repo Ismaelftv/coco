@@ -173,6 +173,10 @@ declare module 'react' {
     htmlFor?: string;
     max?: number | string;
     maxLength?: number;
+    minLength?: number;
+    noValidate?: boolean;
+    loading?: 'lazy' | 'eager';
+    decoding?: 'async' | 'sync' | 'auto';
     min?: number | string;
     multiple?: boolean;
     name?: string;

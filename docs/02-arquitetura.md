@@ -1,6 +1,8 @@
 # Arquitetura — Forja
 
-Estado: proposta v0.1 · Âmbito: alvo para as Fases 2–5, com pontos de extensão para 6–8.
+Estado: v0.2 — Fases 2 e 3 implementadas · Âmbito: alvo para as Fases 2–5, com pontos de extensão para 6–8.
+
+> A API, o modelo de dados e os ADR-0008 a 0011 da Fase 3 estão em [`05-api.md`](05-api.md).
 
 ## 1. Princípios
 
@@ -124,8 +126,8 @@ Primeiro cenário a calcular, quando houver dados: 1 000 utilizadores ativos/dia
 | Fase | Entrega | Critério de saída |
 |---|---|---|
 | 1 | Investigação e arquitetura | Este documento revisto pela equipa. |
-| 2 | Frontend da conversação (**esta entrega**) | Fluxos críticos com testes E2E a passar. |
-| 3 | API, autenticação, Postgres, histórico e ficheiros | Conversas persistidas por utilizador; testes de autorização. |
+| 2 | Frontend da conversação — **concluída** | Fluxos críticos com testes E2E a passar. |
+| 3 | API, autenticação, Postgres, histórico e ficheiros — **concluída** | Conversas persistidas por utilizador; testes de autorização. |
 | 4 | Fornecedores reais, gestão de contexto, contabilização de tokens, avaliações | Conjunto de avaliação com ≥ 100 casos; custo por pedido visível. |
 | 5 | Projetos, sandbox, ciclo de agente para programação | Agente cria uma alteração, corre testes na sandbox e prepara revisão humana. |
 | 6 | Laboratório de segurança autorizado | Verificação de propriedade, escopo, auditoria. |

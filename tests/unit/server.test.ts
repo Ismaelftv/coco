@@ -1,127 +1,14 @@
-import { test, before, after } from 'node:test';
+import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import type { AddressInfo } from 'node:net';
-import { request, type Server } from 'node:http';
-import { createApp } from '../../server/app.ts';
-import { createMockProvider, chunk } from '../../server/providers/mock.ts';
+import { chunk } from '../../server/providers/mock.ts';
 import { trimHistory } from '../../server/context.ts';
 import { createRateLimiter } from '../../server/rate-limit.ts';
-import { createSseParser } from '../../apps/web/src/lib/sse.ts';
-
-let server: Server;
-let base: string;
-let staticDir: string;
-
-before(async () => {
-  staticDir = await mkdtemp(join(tmpdir(), 'forja-static-'));
-  await writeFile(join(staticDir, 'index.html'), '<!doctype html><title>t</title>');
-  server = createApp({ provider: createMockProvider({ delayMs: 0 }), staticDir, chatPerMinute: 1000 });
-  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
-  base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-});
-
-after(async () => {
-  await new Promise<void>((r) => server.close(() => r()));
-  await rm(staticDir, { recursive: true, force: true });
-});
-
-function rawGet(path: string): Promise<{ status: number; body: string }> {
-  const { port } = server.address() as AddressInfo;
-  return new Promise((resolvePromise, reject) => {
-    const req = request({ host: '127.0.0.1', port, path, method: 'GET' }, (res) => {
-      let data = '';
-      res.on('data', (c: Buffer) => (data += c.toString()));
-      res.on('end', () => resolvePromise({ status: res.statusCode ?? 0, body: data }));
-    });
-    req.on('error', reject);
-    req.end();
-  });
-}
-
-const body = (content: string, model = 'forja-sim') =>
-  JSON.stringify({ conversationId: 'c1', model, messages: [{ role: 'user', content }] });
-
-async function chatEvents(content: string) {
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body(content),
-  });
-  assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-type') ?? '', /text\/event-stream/);
-  const parser = createSseParser();
-  const events = [...parser.feed(await res.text()), ...parser.flush()];
-  return events.map((e) => ({ type: e.event, data: JSON.parse(e.data) as Record<string, unknown> }));
-}
-
-test('GET /api/models lista modelos com estado', async () => {
-  const res = await fetch(`${base}/api/models`);
-  const json = (await res.json()) as { models: { id: string; status: string }[] };
-  assert.ok(json.models.some((m) => m.id === 'forja-sim' && m.status === 'simulated'));
-  assert.ok(json.models.some((m) => m.status === 'requires-integration'));
-});
-
-test('POST /api/chat transmite start → deltas → end', async () => {
-  const events = await chatEvents('mostra código');
-  assert.equal(events[0]?.type, 'message.start');
-  assert.equal(events.at(-1)?.type, 'message.end');
-  const text = events.filter((e) => e.type === 'delta').map((e) => e.data.text).join('');
-  assert.match(text, /Resposta simulada/);
-  assert.match(text, /```typescript/);
-});
-
-test('#erro produz evento de erro recuperável', async () => {
-  const events = await chatEvents('falha #erro');
-  const last = events.at(-1);
-  assert.equal(last?.type, 'error');
-  assert.equal(last?.data.retryable, true);
-});
-
-test('valida o pedido', async () => {
-  const post = (b: string, type = 'application/json') =>
-    fetch(`${base}/api/chat`, { method: 'POST', headers: { 'Content-Type': type }, body: b });
-  assert.equal((await post('{x')).status, 400);
-  assert.equal((await post('{}')).status, 422);
-  assert.equal((await post(body('x'), 'text/plain')).status, 415);
-  assert.equal((await post(body('x', 'nao-existe'))).status, 422);
-  assert.equal((await post(body('x', 'anthropic'))).status, 409);
-  assert.equal((await post(body('a'.repeat(40_000)))).status, 422);
-  const assistantLast = JSON.stringify({ conversationId: 'c', model: 'forja-sim', messages: [{ role: 'assistant', content: 'x' }] });
-  assert.equal((await post(assistantLast)).status, 422);
-  assert.equal((await fetch(`${base}/api/chat`)).status, 405);
-});
-
-test('cabeçalhos de segurança e proteção contra path traversal', async () => {
-  const res = await fetch(`${base}/`);
-  assert.equal(res.status, 200);
-  assert.match(res.headers.get('content-security-policy') ?? '', /default-src 'self'/);
-  assert.equal(res.headers.get('x-content-type-options'), 'nosniff');
-  // fetch normaliza "..", por isso o pedido é feito em bruto com barras codificadas.
-  const traversal = await rawGet('/..%2f..%2f..%2fetc%2fpasswd');
-  assert.equal(traversal.status, 403);
-  assert.doesNotMatch(traversal.body, /root:/);
-  assert.equal((await fetch(`${base}/inexistente.js`)).status, 404);
-  assert.equal((await fetch(`${base}/conversa/abc`)).status, 200); // rota da SPA
-});
-
-test('cancelamento a meio do stream não deixa o servidor em erro', async () => {
-  const controller = new AbortController();
-  const res = await fetch(`${base}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body('#lento'),
-    signal: controller.signal,
-  });
-  const reader = res.body!.getReader();
-  await reader.read();
-  controller.abort();
-  await assert.rejects(reader.read());
-  const health = await fetch(`${base}/api/health`);
-  assert.equal(health.status, 200);
-});
+import { classify, cleanFileName } from '../../server/storage/sniff.ts';
+import { HttpError, Router, contentDisposition, parseCookies, serializeCookie, uuidParam } from '../../server/http/http.ts';
+import { hashPassword, needsRehash, verifyPassword } from '../../server/security/password.ts';
+import { likePattern } from '../../server/modules/conversations.ts';
+import { loadConfig } from '../../server/config.ts';
+import { parseValue, serializeParam } from '../../server/db/pg-wire.ts';
 
 test('trimHistory mantém a última mensagem e começa num turno do utilizador', () => {
   const msgs = [
@@ -133,7 +20,6 @@ test('trimHistory mantém a última mensagem e começa num turno do utilizador',
   const trimmed = trimHistory(msgs, 150);
   assert.equal(trimmed.length, 1);
   assert.equal(trimmed[0]!.content[0], 'c');
-  // Mesmo acima do orçamento, a última mensagem é sempre incluída.
   assert.equal(trimHistory([{ role: 'user', content: 'x'.repeat(10_000) }], 1).length, 1);
 });
 
@@ -149,4 +35,78 @@ test('rate limiter recusa acima da capacidade e recupera com o tempo', () => {
   assert.equal(rl.take('ip', 0), false);
   assert.equal(rl.take('ip', 1500), true);
   assert.equal(rl.take('outro', 0), true);
+});
+
+test('classificação de ficheiros pelo conteúdo', () => {
+  const ok = (b: Buffer) => {
+    const r = classify(b);
+    return r.ok ? r.detected.mediaType : r.code;
+  };
+  assert.equal(ok(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1])), 'image/png');
+  assert.equal(ok(Buffer.from([0xff, 0xd8, 0xff, 0xe0])), 'image/jpeg');
+  assert.equal(ok(Buffer.from('GIF89a....')), 'image/gif');
+  assert.equal(ok(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')])), 'image/webp');
+  assert.equal(ok(Buffer.from('%PDF-1.7\n')), 'application/pdf');
+  assert.equal(ok(Buffer.from('<svg onload="x()"></svg>')), 'text/plain; charset=utf-8', 'SVG é tratado como texto');
+  assert.equal(ok(Buffer.from([0xc3, 0x28])), 'unsupported_type', 'UTF-8 inválido');
+  assert.equal(ok(Buffer.from('abc\u0000def')), 'unsupported_type');
+  assert.equal(ok(Buffer.alloc(0)), 'empty_file');
+  assert.equal(cleanFileName('..%2F..%2Fetc%2Fpasswd'), '.._.._etc_passwd');
+  assert.equal(cleanFileName(undefined), 'ficheiro');
+  assert.equal(cleanFileName('%E0%A4%A'), '%E0%A4%A');
+});
+
+test('cookies e Content-Disposition', () => {
+  assert.deepEqual(parseCookies('a=1; b=x%20y; a=2; ruido'), { a: '1', b: 'x y' });
+  const c = serializeCookie('s', 'v', { secure: true, maxAgeSeconds: 10 });
+  assert.equal(c, 's=v; Path=/; HttpOnly; SameSite=Lax; Secure; Max-Age=10');
+  assert.equal(contentDisposition('attachment', 'relatório "final".pdf'), `attachment; filename="relat_rio _final_.pdf"; filename*=UTF-8''relat%C3%B3rio%20%22final%22.pdf`);
+});
+
+test('router: parâmetros, 405 e 404', () => {
+  const r = new Router<null>();
+  r.add('GET', '/api/x/:id', () => {}, { auth: true });
+  const m = r.match('GET', '/api/x/abc');
+  assert.ok(m && m !== 'method-not-allowed');
+  assert.deepEqual(m.params, { id: 'abc' });
+  assert.equal(r.match('POST', '/api/x/abc'), 'method-not-allowed');
+  assert.equal(r.match('GET', '/api/x/abc/y'), null);
+  assert.throws(() => uuidParam("1' OR '1'='1"), HttpError);
+  assert.equal(uuidParam('0D3B6A4E-1C2B-4F6A-9B8C-0123456789AB'), '0d3b6a4e-1c2b-4f6a-9b8c-0123456789ab');
+});
+
+test('hash de palavras-passe: verificação, unicidade e re-hash', async () => {
+  const h1 = await hashPassword('correto-cavalo-bateria', 12);
+  const h2 = await hashPassword('correto-cavalo-bateria', 12);
+  assert.notEqual(h1, h2, 'salt aleatório');
+  assert.equal(await verifyPassword('correto-cavalo-bateria', h1), true);
+  assert.equal(await verifyPassword('correto-cavalo-bateri', h1), false);
+  assert.equal(await verifyPassword('x', 'formato-invalido'), false);
+  assert.equal(needsRehash(h1, 17), true);
+  assert.equal(needsRehash(h1, 12), false);
+});
+
+test('LIKE: curingas do utilizador são escapados', () => {
+  assert.equal(likePattern('50%_a\\b'), '%50\\%\\_a\\\\b%');
+});
+
+test('configuração: falha cedo e regras de produção', () => {
+  assert.throws(() => loadConfig({}), /DATABASE_URL/);
+  const base = { DATABASE_URL: 'postgres://u:p@h:5432/d' };
+  assert.equal(loadConfig(base).cookieSecure, false);
+  assert.throws(() => loadConfig({ ...base, NODE_ENV: 'production' }), /PUBLIC_ORIGIN/);
+  const prod = loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://forja.exemplo' });
+  assert.equal(prod.cookieSecure, true);
+  assert.throws(() => loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://f.x', SCRYPT_LOG_N: '12' }), /SCRYPT/);
+});
+
+test('serialização de parâmetros PostgreSQL', () => {
+  assert.equal(serializeParam(null), null);
+  assert.equal(serializeParam(true)!.toString(), 't');
+  assert.equal(serializeParam(Buffer.from([1, 255]))!.toString(), '\\x01ff');
+  assert.equal(serializeParam({ a: 'é' })!.toString(), '{"a":"é"}');
+  assert.throws(() => serializeParam(Number.NaN));
+  assert.equal((parseValue(1184, '2026-10-18 12:00:00.5+00') as Date).toISOString(), '2026-10-18T12:00:00.500Z');
+  assert.equal((parseValue(1184, '2026-10-18 09:00:00-03') as Date).toISOString(), '2026-10-18T12:00:00.000Z');
+  assert.equal(parseValue(20, '99999999999999999999'), '99999999999999999999');
 });

@@ -1,6 +1,6 @@
 /**
  * Contrato HTTP entre o frontend e a API. Fonte única de verdade para
- * limites, formatos de pedido e eventos de streaming.
+ * formatos de pedido, respostas e eventos de streaming.
  *
  * O servidor valida com os esquemas zod; o frontend importa daqui apenas
  * tipos (`import type`) e os limites de `limits.ts`, para não incluir zod no bundle.
@@ -10,55 +10,160 @@ import { LIMITS } from './limits.ts';
 
 export { LIMITS };
 
-export const roleSchema = z.enum(['user', 'assistant']);
+const uuid = z.string().uuid();
 
-export const attachmentSchema = z.object({
-  name: z.string().min(1).max(255),
-  mediaType: z.string().min(1).max(127),
-  content: z.string().max(LIMITS.attachmentBytes),
+// ---------- Autenticação ----------
+
+export const emailSchema = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .min(3)
+  .max(254)
+  .regex(/^[^\s@]+@[^\s@]+\.[^\s@]+$/, 'Email inválido.');
+
+export const signupSchema = z.object({
+  email: emailSchema,
+  password: z
+    .string()
+    .min(LIMITS.passwordMin, `A palavra-passe precisa de pelo menos ${LIMITS.passwordMin} caracteres.`)
+    .max(LIMITS.passwordMax),
+  displayName: z.string().trim().min(1).max(80).optional(),
 });
 
-export const chatMessageSchema = z.object({
-  role: roleSchema,
-  content: z.string().max(LIMITS.messageChars * 4),
-  attachments: z.array(attachmentSchema).max(LIMITS.attachmentsPerMessage).optional(),
+export const loginSchema = z.object({
+  email: emailSchema,
+  password: z.string().min(1).max(LIMITS.passwordMax),
 });
 
-export const chatRequestSchema = z.object({
-  conversationId: z.string().min(1).max(64),
+export interface User {
+  id: string;
+  email: string;
+  displayName: string | null;
+  createdAt: string;
+}
+
+// ---------- Conversas e mensagens ----------
+
+export const createConversationSchema = z.object({
+  id: uuid,
   model: z.string().min(1).max(64),
-  messages: z
-    .array(chatMessageSchema)
-    .min(1)
-    .max(LIMITS.historyMessages)
-    .refine((m) => m[m.length - 1]?.role === 'user', {
-      message: 'A última mensagem tem de ser do utilizador.',
-    })
-    .refine((m) => (m[m.length - 1]?.content.length ?? 0) <= LIMITS.messageChars, {
-      message: `A mensagem excede ${LIMITS.messageChars} caracteres.`,
-    }),
+  title: z.string().trim().min(1).max(120).optional(),
 });
 
-export type Role = z.infer<typeof roleSchema>;
-export type Attachment = z.infer<typeof attachmentSchema>;
-export type ChatMessage = z.infer<typeof chatMessageSchema>;
-export type ChatRequest = z.infer<typeof chatRequestSchema>;
+export const updateConversationSchema = z
+  .object({
+    title: z.string().trim().min(1).max(120).optional(),
+    model: z.string().min(1).max(64).optional(),
+  })
+  .refine((v) => v.title !== undefined || v.model !== undefined, { message: 'Nada para alterar.' });
 
+export const sendMessageSchema = z.discriminatedUnion('mode', [
+  z.object({
+    mode: z.literal('send'),
+    model: z.string().min(1).max(64),
+    userMessage: z.object({
+      id: uuid,
+      content: z.string().max(LIMITS.messageChars, `A mensagem excede ${LIMITS.messageChars} caracteres.`),
+      fileIds: z.array(uuid).max(LIMITS.attachmentsPerMessage).default([]),
+    }),
+    assistantMessageId: uuid,
+  }),
+  z.object({
+    mode: z.literal('regenerate'),
+    model: z.string().min(1).max(64),
+    fromMessageId: uuid,
+    assistantMessageId: uuid,
+  }),
+]);
+
+export type MessageStatus = 'complete' | 'streaming' | 'error' | 'cancelled';
 export type FinishReason = 'stop' | 'length' | 'cancelled';
 
 export interface Usage {
-  /** Estimativa: o fornecedor simulado não tem tokenizador real. */
+  /** Estimativa enquanto não houver tokenizador do modelo. */
   inputTokens: number;
   outputTokens: number;
   estimated: boolean;
 }
 
-/** Eventos SSE emitidos por POST /api/chat. */
+export interface MessageErrorInfo {
+  code: string;
+  message: string;
+  retryable: boolean;
+}
+
+export type FileKind = 'text' | 'image' | 'pdf';
+
+export interface FileInfo {
+  id: string;
+  name: string;
+  mediaType: string;
+  kind: FileKind;
+  size: number;
+  createdAt: string;
+}
+
+export interface MessageDTO {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  status: MessageStatus;
+  model: string | null;
+  error: MessageErrorInfo | null;
+  usage: Usage | null;
+  files: FileInfo[];
+  createdAt: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string;
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationDetail extends ConversationSummary {
+  messages: MessageDTO[];
+}
+
+// ---------- Importação do histórico guardado no navegador (Fase 2) ----------
+
+const legacyMessage = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string().max(LIMITS.messageChars * 4),
+  createdAt: z.number().int().nonnegative(),
+  status: z.enum(['complete', 'streaming', 'error', 'cancelled']),
+  model: z.string().max(64).optional(),
+  attachments: z
+    .array(z.object({ name: z.string().min(1).max(255), mediaType: z.string().max(127), content: z.string().max(LIMITS.textFileBytes) }))
+    .max(LIMITS.attachmentsPerMessage)
+    .optional(),
+});
+
+export const importSchema = z.object({
+  conversations: z
+    .array(
+      z.object({
+        title: z.string().trim().min(1).max(120),
+        model: z.string().min(1).max(64),
+        createdAt: z.number().int().nonnegative(),
+        updatedAt: z.number().int().nonnegative(),
+        messages: z.array(legacyMessage).max(1000),
+      }),
+    )
+    .max(500),
+});
+
+// ---------- Streaming ----------
+
+/** Eventos SSE emitidos por POST /api/conversations/:id/messages. */
 export type StreamEvent =
   | { type: 'message.start'; data: { id: string; model: string } }
   | { type: 'delta'; data: { text: string } }
   | { type: 'message.end'; data: { finishReason: FinishReason; usage: Usage } }
-  | { type: 'error'; data: { code: string; message: string; retryable: boolean } };
+  | { type: 'error'; data: MessageErrorInfo };
 
 export type ModelStatus = 'available' | 'simulated' | 'requires-integration';
 
@@ -67,6 +172,14 @@ export interface ModelInfo {
   label: string;
   description: string;
   status: ModelStatus;
+}
+
+/** Mensagem normalizada enviada a um fornecedor de modelos. */
+export interface ChatMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  /** `content` só é preenchido para texto; imagens/PDF vão sem conteúdo até haver modelo multimodal. */
+  attachments?: { name: string; mediaType: string; content: string; size?: number }[];
 }
 
 export interface ApiError {

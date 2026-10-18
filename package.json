@@ -1,20 +1,23 @@
 {
   "name": "forja",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Forja — plataforma de assistente de IA. Fase 2: frontend da conversação com fornecedor simulado.",
+  "description": "Forja — plataforma de assistente de IA. Fase 3: API com contas, PostgreSQL, ficheiros e histórico persistente; fornecedor de modelos simulado.",
   "type": "module",
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "tsx scripts/build.ts",
-    "dev": "tsx scripts/build.ts --watch & tsx server/main.ts",
-    "start": "tsx server/main.ts",
+    "dev": "tsx scripts/build.ts --watch & node --env-file-if-exists=.env --import tsx server/main.ts",
+    "start": "node --env-file-if-exists=.env --import tsx server/main.ts",
+    "db:start": "scripts/pg-local.sh start",
+    "db:stop": "scripts/pg-local.sh stop",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node --import tsx --test \"tests/unit/**/*.test.ts\"",
+    "test:integration": "node --import tsx --test tests/integration/*.test.ts",
     "test:e2e": "tsx scripts/build.ts && node --import tsx --test tests/e2e/*.e2e.ts",
-    "check": "npm run typecheck && npm test && npm run test:e2e"
+    "check": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e"
   },
   "dependencies": {
     "dompurify": "3.4.14",

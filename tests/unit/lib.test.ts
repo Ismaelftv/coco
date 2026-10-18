@@ -1,10 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { safeHref } from '../../apps/web/src/lib/url.ts';
-import { looksBinary, validateAttachment } from '../../apps/web/src/lib/attachments.ts';
+import { validateAttachment } from '../../apps/web/src/lib/attachments.ts';
 import { dateGroup, groupByDate } from '../../apps/web/src/lib/time.ts';
-import { createLocalRepository, type KeyValueStorage } from '../../apps/web/src/features/chat/repository.ts';
-import type { Conversation } from '../../apps/web/src/features/chat/types.ts';
+import { LEGACY_KEY, clearLegacy, readLegacy, type KeyValueStorage } from '../../apps/web/src/features/chat/legacy.ts';
 
 test('safeHref aceita http(s) e mailto e bloqueia esquemas perigosos', () => {
   assert.equal(safeHref('https://exemplo.pt/a?b=1'), 'https://exemplo.pt/a?b=1');
@@ -21,12 +20,13 @@ test('safeHref aceita http(s) e mailto e bloqueia esquemas perigosos', () => {
 test('validação de anexos', () => {
   assert.equal(validateAttachment({ name: 'a.ts', size: 10, type: '' }, 0), null);
   assert.equal(validateAttachment({ name: 'notas', size: 10, type: 'text/plain' }, 0), null);
-  assert.equal(validateAttachment({ name: 'foto.png', size: 10, type: 'image/png' }, 0), 'unsupported-type');
-  assert.equal(validateAttachment({ name: 'a.ts', size: 10_000_000, type: '' }, 0), 'too-large');
+  assert.equal(validateAttachment({ name: 'foto.png', size: 10, type: 'image/png' }, 0), null);
+  assert.equal(validateAttachment({ name: 'doc.pdf', size: 5_000_000, type: 'application/pdf' }, 0), null);
+  assert.equal(validateAttachment({ name: 'foto.png', size: 11_000_000, type: 'image/png' }, 0), 'too-large');
+  assert.equal(validateAttachment({ name: 'app.exe', size: 10, type: 'application/x-msdownload' }, 0), 'unsupported-type');
+  assert.equal(validateAttachment({ name: 'a.ts', size: 2_000_000, type: '' }, 0), 'too-large');
   assert.equal(validateAttachment({ name: 'a.ts', size: 0, type: '' }, 0), 'empty');
   assert.equal(validateAttachment({ name: 'a.ts', size: 10, type: '' }, 5), 'too-many');
-  assert.equal(looksBinary('abc\u0000def'), true);
-  assert.equal(looksBinary('texto normal'), false);
 });
 
 test('agrupamento por data', () => {
@@ -42,32 +42,26 @@ test('agrupamento por data', () => {
 
 function memoryStorage(): KeyValueStorage & { data: Map<string, string> } {
   const data = new Map<string, string>();
-  return { data, getItem: (k) => data.get(k) ?? null, setItem: (k, v) => void data.set(k, v) };
+  return { data, getItem: (k: string) => data.get(k) ?? null, setItem: (k: string, v: string) => void data.set(k, v), removeItem: (k: string) => void data.delete(k) };
 }
 
-const conv = (id: string, updatedAt: number, status: 'complete' | 'streaming' = 'complete'): Conversation => ({
-  id,
-  title: id,
-  createdAt: 0,
-  updatedAt,
-  model: 'forja-sim',
-  messages: [{ id: `${id}-m`, role: 'assistant', content: 'x', createdAt: 0, status }],
-});
-
-test('repositório local: ida e volta e recuperação de gerações interrompidas', () => {
+test('histórico da Fase 2: lê, normaliza, ignora lixo e apaga', () => {
   const storage = memoryStorage();
-  const repo = createLocalRepository(storage);
-  repo.save([conv('a', 1), conv('b', 2, 'streaming')]);
-  const loaded = repo.load();
-  assert.deepEqual(loaded.map((c) => c.id), ['b', 'a']);
-  assert.equal(loaded[0]!.messages[0]!.status, 'cancelled');
-});
-
-test('repositório local: ignora dados corrompidos', () => {
-  const storage = memoryStorage();
-  storage.setItem('forja.conversations.v1', '{nao json');
-  assert.deepEqual(createLocalRepository(storage).load(), []);
-  storage.setItem('forja.conversations.v1', JSON.stringify([{ id: 1 }, conv('ok', 1)]));
-  assert.deepEqual(createLocalRepository(storage).load().map((c) => c.id), ['ok']);
-  assert.deepEqual(createLocalRepository(null).load(), []);
+  storage.setItem(LEGACY_KEY, JSON.stringify([
+    { id: 'x', title: ' Antiga ', model: 'forja-sim', createdAt: 1, updatedAt: 2, messages: [
+      { id: 'm', role: 'user', content: 'olá', createdAt: 1, status: 'complete', attachments: [{ name: 'a.md', mediaType: 'text/markdown', size: 3, content: '# a' }] },
+      { id: 'n', role: 'hacker', content: 'x', createdAt: 1, status: 'complete' },
+    ] },
+    { id: 1 },
+  ]));
+  const legacy = readLegacy(storage);
+  assert.equal(legacy.length, 1);
+  assert.equal(legacy[0]!.title, 'Antiga');
+  assert.equal(legacy[0]!.messages.length, 1);
+  assert.deepEqual(legacy[0]!.messages[0]!.attachments, [{ name: 'a.md', mediaType: 'text/markdown', content: '# a' }]);
+  clearLegacy(storage);
+  assert.deepEqual(readLegacy(storage), []);
+  storage.setItem(LEGACY_KEY, '{nao json');
+  assert.deepEqual(readLegacy(storage), []);
+  assert.deepEqual(readLegacy(null), []);
 });

@@ -139,7 +139,9 @@ function composeReply(last: ChatMessage | undefined, turnCount: number): string 
   if (attachments.length > 0) {
     parts.push('**Anexos recebidos pelo servidor:**\n');
     for (const a of attachments) {
-      parts.push(`- \`${a.name}\` — ${a.mediaType}, ${formatBytes(new TextEncoder().encode(a.content).length)}`);
+      const size = a.size ?? new TextEncoder().encode(a.content).length;
+      const note = a.content ? '' : ' (conteúdo não interpretado: requer modelo multimodal, Fase 4)';
+      parts.push(`- \`${a.name}\` — ${a.mediaType.split(';')[0]}, ${formatBytes(size)}${note}`);
     }
     parts.push('');
   }

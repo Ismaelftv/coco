@@ -1,9 +1,13 @@
 /**
  * Estado da conversação como reducer puro (testável sem DOM).
- * Os efeitos (rede, persistência) vivem em useChat.ts.
+ * Os efeitos (rede) vivem em useChat.ts. O servidor é a fonte de verdade;
+ * este estado é uma cache otimista do que o utilizador vê.
  */
-import type { FinishReason, Usage } from '../../../../../shared/contract.ts';
-import type { Conversation, Generation, Message, MessageAttachment, MessageError } from './types.ts';
+import type { FileInfo, FinishReason, Usage } from '../../../../../shared/contract.ts';
+import { deriveTitle } from '../../../../../shared/text.ts';
+import type { Conversation, Generation, Message, MessageError } from './types.ts';
+
+export { deriveTitle };
 
 export interface ChatState {
   conversations: Record<string, Conversation>;
@@ -14,45 +18,28 @@ export interface ChatState {
 export const initialChatState: ChatState = { conversations: {}, activeId: null, generation: null };
 
 export type ChatAction =
-  | { type: 'hydrate'; conversations: Conversation[] }
+  | { type: 'hydrate'; conversations: Conversation[]; append?: boolean }
+  | { type: 'loaded'; conversation: Conversation }
   | { type: 'select'; id: string | null }
   | { type: 'create'; id: string; model: string; now: number }
+  | { type: 'restore'; conversation: Conversation }
   | { type: 'rename'; id: string; title: string }
   | { type: 'delete'; id: string }
   | { type: 'setModel'; id: string; model: string }
   | {
       type: 'sendUser';
       conversationId: string;
-      message: { id: string; content: string; attachments?: MessageAttachment[] };
+      message: { id: string; content: string; files: FileInfo[] };
       assistantId: string;
       model: string;
       now: number;
     }
   | { type: 'appendDelta'; conversationId: string; messageId: string; text: string }
-  | {
-      type: 'finish';
-      conversationId: string;
-      messageId: string;
-      finishReason: FinishReason;
-      usage?: Usage;
-      now: number;
-    }
-  | { type: 'fail'; conversationId: string; messageId: string; error: MessageError; now: number }
+  | { type: 'finish'; conversationId: string; messageId: string; finishReason: FinishReason; usage?: Usage; now: number }
+  | { type: 'fail'; conversationId: string; messageId: string; error: MessageError; now: number; notPersisted?: boolean }
   | { type: 'truncateFrom'; conversationId: string; messageId: string; assistantId: string; model: string; now: number };
 
-export const TITLE_MAX = 60;
-
-export function deriveTitle(text: string): string {
-  const firstLine = text.trim().split('\n')[0]?.replace(/\s+/g, ' ') ?? '';
-  if (!firstLine) return 'Nova conversa';
-  return firstLine.length > TITLE_MAX ? `${firstLine.slice(0, TITLE_MAX - 1).trimEnd()}…` : firstLine;
-}
-
-function updateConversation(
-  state: ChatState,
-  id: string,
-  fn: (c: Conversation) => Conversation,
-): ChatState {
+function updateConversation(state: ChatState, id: string, fn: (c: Conversation) => Conversation): ChatState {
   const current = state.conversations[id];
   if (!current) return state;
   return { ...state, conversations: { ...state.conversations, [id]: fn(current) } };
@@ -69,15 +56,29 @@ function updateMessage(c: Conversation, messageId: string, fn: (m: Message) => M
 }
 
 function emptyAssistant(id: string, model: string, now: number): Message {
-  return { id, role: 'assistant', content: '', createdAt: now, status: 'streaming', model };
+  return { id, role: 'assistant', content: '', createdAt: now, status: 'streaming', model, files: [] };
 }
 
 export function chatReducer(state: ChatState, action: ChatAction): ChatState {
   switch (action.type) {
     case 'hydrate': {
-      const conversations: Record<string, Conversation> = {};
-      for (const c of action.conversations) conversations[c.id] = c;
+      // Mantém as mensagens já carregadas e a conversa em geração.
+      const conversations: Record<string, Conversation> = action.append ? { ...state.conversations } : {};
+      if (!action.append) {
+        for (const c of Object.values(state.conversations)) {
+          if (c.id === state.activeId || c.id === state.generation?.conversationId) conversations[c.id] = c;
+        }
+      }
+      for (const c of action.conversations) {
+        const existing = state.conversations[c.id];
+        conversations[c.id] = existing?.loaded ? { ...existing, title: c.title } : c;
+      }
       return { ...state, conversations };
+    }
+    case 'loaded': {
+      // Não substitui uma conversa com geração em curso.
+      if (state.generation?.conversationId === action.conversation.id) return state;
+      return { ...state, conversations: { ...state.conversations, [action.conversation.id]: action.conversation } };
     }
     case 'select':
       return { ...state, activeId: action.id };
@@ -89,13 +90,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
         updatedAt: action.now,
         model: action.model,
         messages: [],
+        loaded: true,
       };
-      return {
-        ...state,
-        activeId: action.id,
-        conversations: { ...state.conversations, [action.id]: conversation },
-      };
+      return { ...state, activeId: action.id, conversations: { ...state.conversations, [action.id]: conversation } };
     }
+    case 'restore':
+      return { ...state, conversations: { ...state.conversations, [action.conversation.id]: action.conversation } };
     case 'rename': {
       const title = action.title.trim().slice(0, 120);
       if (!title) return state;
@@ -122,12 +122,12 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
           content: action.message.content,
           createdAt: action.now,
           status: 'complete',
-          ...(action.message.attachments?.length ? { attachments: action.message.attachments } : {}),
+          files: action.message.files,
         };
-        const isFirst = c.messages.length === 0;
+        const isFirst = c.messages.length === 0 && c.title === 'Nova conversa';
         return {
           ...c,
-          title: isFirst ? deriveTitle(action.message.content || action.message.attachments?.[0]?.name || '') : c.title,
+          title: isFirst ? deriveTitle(action.message.content || action.message.files[0]?.name || '') : c.title,
           updatedAt: action.now,
           model: action.model,
           messages: [...c.messages, user, emptyAssistant(action.assistantId, action.model, action.now)],
@@ -138,9 +138,7 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
     case 'appendDelta':
       return updateConversation(state, action.conversationId, (c) =>
-        updateMessage(c, action.messageId, (m) =>
-          m.status === 'streaming' ? { ...m, content: m.content + action.text } : m,
-        ),
+        updateMessage(c, action.messageId, (m) => (m.status === 'streaming' ? { ...m, content: m.content + action.text } : m)),
       );
     case 'finish': {
       const next = updateConversation(state, action.conversationId, (c) => ({
@@ -155,13 +153,17 @@ export function chatReducer(state: ChatState, action: ChatAction): ChatState {
     }
     case 'fail': {
       const next = updateConversation(state, action.conversationId, (c) => ({
-        ...updateMessage(c, action.messageId, (m) => ({ ...m, status: 'error', error: action.error })),
+        ...updateMessage(c, action.messageId, (m) => ({
+          ...m,
+          status: 'error',
+          error: action.error,
+          ...(action.notPersisted ? { notPersisted: true } : {}),
+        })),
         updatedAt: action.now,
       }));
       return clearGeneration(next, action.messageId);
     }
     case 'truncateFrom': {
-      // Remove a mensagem do assistente indicada (e tudo depois) e começa uma nova geração.
       if (state.generation) return state;
       const next = updateConversation(state, action.conversationId, (c) => {
         const index = c.messages.findIndex((m) => m.id === action.messageId);
@@ -186,17 +188,4 @@ function clearGeneration(state: ChatState, messageId: string): ChatState {
 /** Conversas ordenadas da mais recente para a mais antiga. */
 export function sortedConversations(state: ChatState): Conversation[] {
   return Object.values(state.conversations).sort((a, b) => b.updatedAt - a.updatedAt);
-}
-
-/** Pesquisa por título e conteúdo, sem distinguir maiúsculas nem acentos. */
-export function searchConversations(list: readonly Conversation[], query: string): Conversation[] {
-  const q = fold(query.trim());
-  if (!q) return [...list];
-  return list.filter(
-    (c) => fold(c.title).includes(q) || c.messages.some((m) => fold(m.content).includes(q)),
-  );
-}
-
-export function fold(text: string): string {
-  return text.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 }

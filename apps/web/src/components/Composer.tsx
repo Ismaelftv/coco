@@ -1,24 +1,19 @@
 import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type KeyboardEvent } from 'react';
+import type { FileInfo } from '../../../../shared/contract.ts';
 import { LIMITS } from '../../../../shared/limits.ts';
-import type { MessageAttachment } from '../features/chat/types.ts';
 import type { ModelsState } from '../features/chat/useChat.ts';
-import {
-  formatBytes,
-  looksBinary,
-  rejectionMessage,
-  validateAttachment,
-} from '../lib/attachments.ts';
+import { api, uploadFile, type UploadHandle } from '../lib/api.ts';
+import { formatBytes, rejectionMessage, validateAttachment } from '../lib/attachments.ts';
 import { Icon } from './Icon.tsx';
 import { ModelPicker } from './ModelPicker.tsx';
 
 interface DraftAttachment {
-  id: string;
+  key: string;
   name: string;
   size: number;
-  mediaType: string;
-  state: 'reading' | 'ready' | 'error';
+  state: 'uploading' | 'ready' | 'error';
   progress: number;
-  content?: string;
+  file?: FileInfo;
   error?: string;
 }
 
@@ -29,7 +24,7 @@ interface Props {
   selectedModel: string | null;
   onSelectModel(id: string): void;
   onRetryModels(): void;
-  onSend(text: string, attachments: MessageAttachment[]): boolean;
+  onSend(text: string, files: FileInfo[]): boolean;
   onStop(): void;
   autoFocusKey: string;
 }
@@ -43,7 +38,7 @@ export function Composer(props: Props) {
   const [dragging, setDragging] = useState(false);
   const textarea = useRef<HTMLTextAreaElement | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
-  const readers = useRef(new Map<string, FileReader>());
+  const uploads = useRef(new Map<string, UploadHandle>());
 
   // Altura automática até 40% da janela.
   useLayoutEffect(() => {
@@ -58,67 +53,55 @@ export function Composer(props: Props) {
   }, [props.autoFocusKey]);
 
   useEffect(() => {
-    const active = readers.current;
-    return () => active.forEach((r) => r.abort());
+    const active = uploads.current;
+    return () => active.forEach((u) => u.abort());
   }, []);
 
-  const update = (id: string, patch: Partial<DraftAttachment>) =>
-    setAttachments((list) => list.map((a) => (a.id === id ? { ...a, ...patch } : a)));
+  const update = (key: string, patch: Partial<DraftAttachment>) =>
+    setAttachments((list) => list.map((a) => (a.key === key ? { ...a, ...patch } : a)));
 
   const addFiles = (files: FileList | File[]) => {
     let count = attachments.filter((a) => a.state !== 'error').length;
     const added: DraftAttachment[] = [];
     for (const file of Array.from(files)) {
-      const id = crypto.randomUUID();
-      const base = { id, name: file.name, size: file.size, mediaType: file.type || 'text/plain', progress: 0 };
+      const key = crypto.randomUUID();
+      const base = { key, name: file.name, size: file.size, progress: 0 };
       const rejection = validateAttachment(file, count);
       if (rejection) {
         added.push({ ...base, state: 'error', error: rejectionMessage(rejection) });
         continue;
       }
       count++;
-      added.push({ ...base, state: 'reading' });
-      const reader = new FileReader();
-      readers.current.set(id, reader);
-      reader.onprogress = (e) => {
-        if (e.lengthComputable) update(id, { progress: e.loaded / e.total });
-      };
-      reader.onload = () => {
-        readers.current.delete(id);
-        const content = typeof reader.result === 'string' ? reader.result : '';
-        if (looksBinary(content)) update(id, { state: 'error', error: 'Conteúdo binário detetado.' });
-        else update(id, { state: 'ready', progress: 1, content });
-      };
-      reader.onerror = () => {
-        readers.current.delete(id);
-        update(id, { state: 'error', error: 'Não foi possível ler o ficheiro.' });
-      };
-      reader.readAsText(file);
+      added.push({ ...base, state: 'uploading' });
+      const handle = uploadFile(file, (progress) => update(key, { progress }));
+      uploads.current.set(key, handle);
+      handle.promise
+        .then((info) => update(key, { state: 'ready', progress: 1, file: info }))
+        .catch((err: Error) => {
+          if ((err as { code?: string }).code !== 'aborted') update(key, { state: 'error', error: err.message });
+        })
+        .finally(() => uploads.current.delete(key));
     }
     setAttachments((list) => [...list, ...added]);
   };
 
-  const removeAttachment = (id: string) => {
-    readers.current.get(id)?.abort();
-    readers.current.delete(id);
-    setAttachments((list) => list.filter((a) => a.id !== id));
+  const removeAttachment = (a: DraftAttachment) => {
+    uploads.current.get(a.key)?.abort();
+    uploads.current.delete(a.key);
+    // Um ficheiro já enviado mas não usado é apagado do servidor.
+    if (a.file) void api.deleteFile(a.file.id).catch(() => undefined);
+    setAttachments((list) => list.filter((x) => x.key !== a.key));
   };
 
-  const reading = attachments.some((a) => a.state === 'reading');
-  const ready = attachments.filter((a) => a.state === 'ready');
+  const uploading = attachments.some((a) => a.state === 'uploading');
+  const ready = attachments.filter((a): a is DraftAttachment & { file: FileInfo } => a.state === 'ready' && !!a.file);
   const tooLong = text.length > LIMITS.messageChars;
   const hasContent = text.trim().length > 0 || ready.length > 0;
-  const sendDisabled = !canSend || !hasContent || reading || tooLong;
+  const sendDisabled = !canSend || !hasContent || uploading || tooLong;
 
   const submit = () => {
     if (isGenerating || sendDisabled) return;
-    const payload: MessageAttachment[] = ready.map((a) => ({
-      name: a.name,
-      mediaType: a.mediaType,
-      size: a.size,
-      content: a.content ?? '',
-    }));
-    if (onSend(text.trim(), payload)) {
+    if (onSend(text.trim(), ready.map((a) => a.file))) {
       setText('');
       setAttachments([]);
     }
@@ -153,12 +136,12 @@ export function Composer(props: Props) {
         {attachments.length > 0 ? (
           <ul className="composer__files" aria-label="Anexos a enviar">
             {attachments.map((a) => (
-              <li key={a.id} className={`file-chip file-chip--${a.state}`} title={a.error ?? a.name}>
+              <li key={a.key} className={`file-chip file-chip--${a.state}`} title={a.error ?? a.name}>
                 <Icon name={a.state === 'error' ? 'alert' : 'file'} size={14} />
                 <span className="file-chip__name">{a.name}</span>
                 <span className="file-chip__meta">
-                  {a.state === 'reading'
-                    ? `A ler… ${Math.round(a.progress * 100)}%`
+                  {a.state === 'uploading'
+                    ? `A enviar… ${Math.round(a.progress * 100)}%`
                     : a.state === 'error'
                       ? a.error
                       : formatBytes(a.size)}
@@ -166,7 +149,7 @@ export function Composer(props: Props) {
                 <button
                   type="button"
                   className="file-chip__remove"
-                  onClick={() => removeAttachment(a.id)}
+                  onClick={() => removeAttachment(a)}
                   aria-label={`Remover ${a.name}`}
                 >
                   <Icon name="close" size={12} />
@@ -215,8 +198,8 @@ export function Composer(props: Props) {
               type="button"
               className="icon-btn"
               onClick={() => fileInput.current?.click()}
-              aria-label="Anexar ficheiros de texto"
-              title="Anexar ficheiros de texto"
+              aria-label="Anexar ficheiros"
+              title="Anexar ficheiros (texto, imagens, PDF)"
             >
               <Icon name="paperclip" />
             </button>
@@ -251,7 +234,7 @@ export function Composer(props: Props) {
             )}
           </div>
         </div>
-        {dragging ? <div className="composer__drop">Larga os ficheiros de texto aqui</div> : null}
+        {dragging ? <div className="composer__drop">Larga os ficheiros aqui</div> : null}
       </div>
       <p id="composer-hint" className="composer-hint">
         Enter envia · Shift+Enter nova linha · Fornecedor simulado: as respostas não vêm de um modelo de IA.

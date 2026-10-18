@@ -1,20 +1,15 @@
-import type { Usage } from '../../../../../shared/contract.ts';
+import type {
+  ConversationDetail,
+  ConversationSummary,
+  FileInfo,
+  MessageDTO,
+  MessageErrorInfo,
+  MessageStatus,
+  Usage,
+} from '../../../../../shared/contract.ts';
 
-export type MessageStatus = 'complete' | 'streaming' | 'error' | 'cancelled';
-
-export interface MessageAttachment {
-  name: string;
-  mediaType: string;
-  size: number;
-  /** Conteúdo de texto, necessário para reenviar o histórico. */
-  content: string;
-}
-
-export interface MessageError {
-  code: string;
-  message: string;
-  retryable: boolean;
-}
+export type { MessageStatus };
+export type MessageError = MessageErrorInfo;
 
 export interface Message {
   id: string;
@@ -22,10 +17,12 @@ export interface Message {
   content: string;
   createdAt: number;
   status: MessageStatus;
-  attachments?: MessageAttachment[];
-  model?: string;
-  usage?: Usage;
-  error?: MessageError;
+  files: FileInfo[];
+  model?: string | null;
+  usage?: Usage | null;
+  error?: MessageError | null;
+  /** A falha ocorreu antes de o servidor gravar o pedido: repetir significa reenviar. */
+  notPersisted?: boolean;
 }
 
 export interface Conversation {
@@ -35,9 +32,39 @@ export interface Conversation {
   updatedAt: number;
   model: string;
   messages: Message[];
+  /** As mensagens já foram carregadas do servidor (ou a conversa é nova). */
+  loaded: boolean;
 }
 
 export interface Generation {
   conversationId: string;
   messageId: string;
 }
+
+export const fromSummary = (s: ConversationSummary): Conversation => ({
+  id: s.id,
+  title: s.title,
+  model: s.model,
+  createdAt: Date.parse(s.createdAt),
+  updatedAt: Date.parse(s.updatedAt),
+  messages: [],
+  loaded: false,
+});
+
+export const fromMessageDTO = (m: MessageDTO): Message => ({
+  id: m.id,
+  role: m.role,
+  content: m.content,
+  createdAt: Date.parse(m.createdAt),
+  status: m.status,
+  files: m.files,
+  model: m.model,
+  usage: m.usage,
+  error: m.error,
+});
+
+export const fromDetail = (d: ConversationDetail): Conversation => ({
+  ...fromSummary(d),
+  messages: d.messages.map(fromMessageDTO),
+  loaded: true,
+});

@@ -1,10 +1,8 @@
-import { LIMITS } from '../../../../shared/limits.ts';
+import { IMAGE_TYPES, LIMITS } from '../../../../shared/limits.ts';
 
 /**
- * Validação de anexos no navegador. É uma verificação de UX — o servidor
- * volta a validar tudo. Nesta fase só são aceites ficheiros de texto, lidos
- * localmente e enviados no corpo do pedido. Upload de binários/imagens para
- * armazenamento de objetos fica para a Fase 3.
+ * Pré-validação de anexos no navegador. É apenas UX: o servidor classifica
+ * o ficheiro pelos bytes e decide (ver server/storage/sniff.ts).
  */
 const TEXT_EXTENSIONS = new Set([
   'txt', 'md', 'markdown', 'csv', 'tsv', 'json', 'jsonl', 'yaml', 'yml', 'toml', 'ini', 'xml',
@@ -34,11 +32,21 @@ export function isTextLike(file: FileLike): boolean {
   return TEXT_EXTENSIONS.has(extensionOf(file.name));
 }
 
+export function isImageOrPdf(file: FileLike): boolean {
+  const ext = extensionOf(file.name);
+  return (
+    (IMAGE_TYPES as readonly string[]).includes(file.type) ||
+    file.type === 'application/pdf' ||
+    ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'].includes(ext)
+  );
+}
+
 export function validateAttachment(file: FileLike, alreadyAttached: number): AttachmentRejection | null {
   if (alreadyAttached >= LIMITS.attachmentsPerMessage) return 'too-many';
   if (file.size === 0) return 'empty';
-  if (file.size > LIMITS.attachmentBytes) return 'too-large';
+  if (isImageOrPdf(file)) return file.size > LIMITS.binaryFileBytes ? 'too-large' : null;
   if (!isTextLike(file)) return 'unsupported-type';
+  if (file.size > LIMITS.textFileBytes) return 'too-large';
   return null;
 }
 
@@ -47,17 +55,12 @@ export function rejectionMessage(reason: AttachmentRejection): string {
     case 'too-many':
       return `Máximo de ${LIMITS.attachmentsPerMessage} anexos por mensagem.`;
     case 'too-large':
-      return `Excede ${formatBytes(LIMITS.attachmentBytes)}.`;
+      return `Demasiado grande (texto até ${formatBytes(LIMITS.textFileBytes)}, imagens e PDF até ${formatBytes(LIMITS.binaryFileBytes)}).`;
     case 'unsupported-type':
-      return 'Só ficheiros de texto nesta fase. Imagens e binários: pendente (Fase 3).';
+      return 'Tipo não suportado. Aceites: texto, PNG, JPEG, GIF, WebP e PDF.';
     case 'empty':
       return 'Ficheiro vazio.';
   }
-}
-
-/** Heurística: presença de byte NUL indica conteúdo binário. */
-export function looksBinary(text: string): boolean {
-  return text.slice(0, 8000).includes('\u0000');
 }
 
 export function formatBytes(n: number): string {

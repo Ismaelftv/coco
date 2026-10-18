@@ -1,6 +1,8 @@
 import { memo } from 'react';
 import type { Message } from '../features/chat/types.ts';
+import { api } from '../lib/api.ts';
 import { formatBytes } from '../lib/attachments.ts';
+import type { FileInfo } from '../../../../shared/contract.ts';
 import { CopyButton } from './CopyButton.tsx';
 import { Icon } from './Icon.tsx';
 import { Markdown } from './Markdown.tsx';
@@ -17,17 +19,7 @@ export const MessageView = memo(function MessageView({ message, isLast, canRegen
     return (
       <article className="msg msg--user" aria-label="A tua mensagem">
         <div className="msg__bubble">
-          {message.attachments?.length ? (
-            <ul className="msg__attachments" aria-label="Anexos">
-              {message.attachments.map((a) => (
-                <li key={a.name} className="file-chip file-chip--static">
-                  <Icon name="file" size={14} />
-                  <span className="file-chip__name">{a.name}</span>
-                  <span className="file-chip__meta">{formatBytes(a.size)}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+          {message.files.length ? <FileList files={message.files} /> : null}
           {message.content ? <p className="msg__text">{message.content}</p> : null}
         </div>
         <div className="msg__actions msg__actions--user">
@@ -119,3 +111,30 @@ export const MessageView = memo(function MessageView({ message, isLast, canRegen
     </article>
   );
 });
+
+function FileList({ files }: { files: FileInfo[] }) {
+  return (
+    <ul className="msg__attachments" aria-label="Anexos">
+      {files.map((f) =>
+        f.kind === 'image' ? (
+          <li key={f.id}>
+            <a className="file-thumb" href={api.fileUrl(f.id)} target="_blank" rel="noopener" title={f.name}>
+              <img src={api.fileUrl(f.id)} alt={f.name} loading="lazy" decoding="async" />
+            </a>
+          </li>
+        ) : (
+          <li key={f.id}>
+            <a className="file-chip file-chip--static file-chip--link" href={api.fileUrl(f.id)} download={f.name}>
+              <Icon name="file" size={14} />
+              <span className="file-chip__name">{f.name}</span>
+              <span className="file-chip__meta">
+                {f.kind === 'pdf' ? 'PDF · ' : ''}
+                {formatBytes(f.size)}
+              </span>
+            </a>
+          </li>
+        ),
+      )}
+    </ul>
+  );
+}

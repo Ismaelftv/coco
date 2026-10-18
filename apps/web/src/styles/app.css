@@ -1174,3 +1174,236 @@
     transform: translateX(-100%);
   }
 }
+
+/* ============ Fase 3: conta, carregamento, avisos, anexos ============ */
+.splash {
+  display: grid;
+  place-items: center;
+  min-height: 100dvh;
+  padding: var(--space-4);
+}
+
+.splash > .logo {
+  animation: pulse 1.4s ease-in-out infinite;
+}
+
+.splash__card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 24rem;
+  padding: var(--space-8);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-md);
+  text-align: center;
+}
+
+.splash__card > .icon {
+  color: var(--color-danger);
+}
+
+.splash__detail {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.account {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+.account__button {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) var(--space-2) var(--space-1) var(--space-1);
+  border: 0;
+  border-radius: var(--radius-md);
+  background: none;
+  text-align: left;
+}
+
+.account__button:hover,
+.account__button[aria-expanded='true'] {
+  background: var(--color-hover);
+}
+
+.avatar {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: var(--radius-pill);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-strong);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+}
+
+.account__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--text-sm);
+}
+
+.account__menu {
+  bottom: calc(100% + 6px);
+  left: 0;
+  min-width: 15rem;
+}
+
+.account__email {
+  padding: var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: var(--space-1);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.menu-item--disabled {
+  color: var(--color-text-muted);
+  cursor: default;
+}
+
+.menu-item--disabled:hover {
+  background: none;
+}
+
+.menu-item .badge {
+  margin-left: auto;
+}
+
+.import-offer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 30%, transparent);
+  border-radius: var(--radius-lg);
+  background: var(--color-accent-soft);
+  font-size: var(--text-sm);
+}
+
+.import-offer__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.sidebar__empty--error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-2);
+  color: var(--color-danger);
+}
+
+.history-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2);
+}
+
+.history-skeleton__row {
+  height: 0.875rem;
+}
+
+.load-more {
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.thread-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  width: min(100%, var(--reading-width));
+}
+
+.thread-skeleton__user {
+  align-self: flex-end;
+  width: 40%;
+  height: 2.75rem;
+  border-radius: var(--radius-xl);
+}
+
+.thread-skeleton__line {
+  width: 90%;
+  height: 1rem;
+}
+
+.thread-skeleton__line--short {
+  width: 55%;
+}
+
+.toasts {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(26rem, calc(100vw - 2rem));
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  background: var(--color-text);
+  color: var(--color-bg);
+  box-shadow: var(--shadow-lg);
+  font-size: var(--text-sm);
+  animation: rise var(--duration-slow) var(--ease-out);
+}
+
+.toast .icon-btn {
+  color: inherit;
+  flex-shrink: 0;
+}
+
+.toast span {
+  flex: 1;
+}
+
+.file-chip--link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.file-chip--link:hover {
+  border-color: var(--color-border-strong);
+}
+
+.file-thumb {
+  display: block;
+  width: 7.5rem;
+  height: 7.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  background: var(--color-surface);
+}
+
+.file-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.file-chip--uploading .file-chip__meta {
+  color: var(--color-accent-strong);
+}

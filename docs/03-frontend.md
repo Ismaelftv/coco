@@ -1,6 +1,6 @@
 # Frontend — estado, design system e decisões
 
-Estado: Fase 2, primeira versão · 18 de outubro de 2026
+Estado: Fase 3 (ligado à API) · 18 de outubro de 2026
 
 ## 1. Estado real das funcionalidades
 
@@ -8,9 +8,11 @@ Estado: Fase 2, primeira versão · 18 de outubro de 2026
 |---|---|---|
 | Barra lateral (expandir/recolher; gaveta em telemóvel com foco gerido e Escape) | **Implementado** | Testado E2E em 1360 px e 390 px. |
 | Nova conversa, histórico agrupado por data | **Implementado** | |
-| Pesquisa no histórico (título e conteúdo, ignora acentos) | **Implementado** | Local, no navegador. |
-| Mudar o nome / eliminar conversa (com confirmação) | **Implementado** | |
-| Persistência do histórico | **Implementado — temporário** | `localStorage` atrás da interface `ConversationRepository`; passa para a API na Fase 3. |
+| Pesquisa no histórico (título e conteúdo, ignora acentos) | **Implementado** | No servidor, com atraso de 250 ms entre teclas. |
+| Mudar o nome / eliminar conversa (com confirmação) | **Implementado** | Otimista, com reposição e aviso se o servidor falhar. |
+| Persistência do histórico | **Implementado** | No servidor (PostgreSQL), por conta. Paginação com “Carregar mais”. |
+| Contas: registo, entrada, sair, sessão expirada | **Implementado** | Ecrã próprio; um 401 a meio do uso devolve ao ecrã de entrada com aviso. |
+| Importação do histórico da Fase 2 | **Implementado** | Oferecida uma vez se houver dados no navegador; apagados depois de importar ou descartar. |
 | Composer multilinha (Enter envia, Shift+Enter nova linha, IME seguro) | **Implementado** | Altura automática até 40 % da janela; contador perto do limite. |
 | Enviar / Parar geração | **Implementado** | Cancelamento real: `AbortController` → servidor deteta o fecho e para o fornecedor. |
 | Streaming progressivo (SSE sobre `fetch`) | **Implementado** | Contrato definitivo (`docs/02-arquitetura.md` §4); fragmentos agrupados por frame de animação. |
@@ -18,12 +20,12 @@ Estado: Fase 2, primeira versão · 18 de outubro de 2026
 | Blocos de código com realce e botão Copiar | **Implementado** | highlight.js com 13 linguagens registadas. |
 | Copiar mensagem, regenerar última resposta | **Implementado** | |
 | Erros com Repetir | **Implementado** | Erros HTTP, de rede, de stream interrompido e do fornecedor. |
-| Anexos de texto (seletor, arrastar, colar) com estados de leitura e rejeição | **Implementado** | Lidos no navegador e enviados no pedido; o servidor valida de novo. |
-| Anexos de imagem/binários | **Pendente (Fase 3)** | Rejeitados com mensagem explícita. Precisam de armazenamento de objetos. |
+| Anexos (texto, PNG, JPEG, GIF, WebP, PDF) com progresso de envio | **Implementado** | Enviados para o servidor; imagens com miniatura; ficheiros removidos antes de enviar são apagados. |
+| Interpretação de imagens/PDF pelo modelo | **Pendente (Fase 4)** | Requer modelo multimodal. |
 | Seletor de modelo | **Implementado** | Lista vinda de `GET /api/models` com estados `simulado` / `requer integração`. |
 | Respostas do modelo | **Simulado** | Fornecedor `forja-sim` sem IA. Indicado no topo, no seletor, no rodapé e no próprio texto. |
 | Tema claro/escuro/sistema | **Implementado** | Persistido; o modo sistema segue `prefers-color-scheme`. |
-| Projetos, Definições | **Pendente** | Visíveis como desativados com etiqueta “Pendente”. |
+| Projetos, Definições | **Pendente** | Visíveis como desativados com etiqueta “Pendente” (Definições no menu da conta). |
 | Contagem de tokens | **Estimativa** | ≈4 caracteres/token, marcada como estimativa na interface. |
 
 ## 2. Design system

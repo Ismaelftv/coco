@@ -1,15 +1,9 @@
 /**
- * Cliente da API. Usa fetch + ReadableStream em vez de EventSource porque o
- * pedido é POST com corpo JSON e precisa de cancelamento via AbortSignal.
+ * Streaming de respostas. Usa fetch + ReadableStream em vez de EventSource
+ * porque o pedido é POST com corpo JSON e precisa de cancelamento via AbortSignal.
  */
-import type {
-  ApiError,
-  ChatRequest,
-  FinishReason,
-  ModelInfo,
-  StreamEvent,
-  Usage,
-} from '../../../../../shared/contract.ts';
+import type { FinishReason, StreamEvent, Usage } from '../../../../../shared/contract.ts';
+import { apiFetch, errorFrom } from '../../lib/api.ts';
 import { createSseParser } from '../../lib/sse.ts';
 
 export interface StreamHandlers {
@@ -19,49 +13,28 @@ export interface StreamHandlers {
   onError(error: { code: string; message: string; retryable: boolean }): void;
 }
 
-export class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-  ) {
-    super(message);
-  }
-}
-
-async function readError(res: Response): Promise<HttpError> {
-  try {
-    const body = (await res.json()) as ApiError;
-    return new HttpError(res.status, body.error.code, body.error.message);
-  } catch {
-    return new HttpError(res.status, 'http_error', `Erro HTTP ${res.status}.`);
-  }
-}
-
-export async function fetchModels(signal?: AbortSignal): Promise<ModelInfo[]> {
-  const res = await fetch('/api/models', signal ? { signal } : {});
-  if (!res.ok) throw await readError(res);
-  const body = (await res.json()) as { models: ModelInfo[] };
-  return body.models;
-}
+export type SendBody =
+  | { mode: 'send'; model: string; userMessage: { id: string; content: string; fileIds: string[] }; assistantMessageId: string }
+  | { mode: 'regenerate'; model: string; fromMessageId: string; assistantMessageId: string };
 
 /**
  * Envia o pedido e despacha os eventos. Resolve quando o stream termina.
  * Um AbortError é relançado para o chamador distinguir "Parar" de uma falha.
  */
 export async function streamChat(
-  request: ChatRequest,
+  conversationId: string,
+  request: SendBody,
   handlers: StreamHandlers,
   signal: AbortSignal,
 ): Promise<void> {
-  const res = await fetch('/api/chat', {
+  const res = await apiFetch(`/api/conversations/${conversationId}/messages`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
     body: JSON.stringify(request),
     signal,
   });
   if (!res.ok) {
-    const err = await readError(res);
+    const err = await errorFrom(res);
     handlers.onError({
       code: err.code,
       message: err.message,
