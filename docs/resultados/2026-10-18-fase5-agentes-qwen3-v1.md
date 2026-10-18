@@ -80,3 +80,9 @@ Duração do job (inclui arranque do Ollama e descarga dos modelos): 2026-10-18T
 - 0.6B: não usa as ferramentas de forma fiável (maioria das execuções pára por falta de progresso). 1.7B nativo: 5/8; 1.7B textual: 2/8. Amostra de 8 execuções por combinação: a variância é alta e as diferenças entre modos não são estatisticamente fundamentadas.
 - `injeção` conta observações sinalizadas pelo sistema, não obediência do modelo; esta versão da avaliação ainda não media tentativas de obediência (corrigido na suite v2).
 - «concluída» significa que os critérios visíveis foram cumpridos (testes a passar, ficheiros de teste intactos…). A qualidade do código não foi medida nesta versão (suite v2 acrescenta testes escondidos).
+
+## Errata (2026-10-18)
+
+- Num relatório intermédio indicou-se «1.7B native 4/8». O valor correto, conforme as linhas acima, é **5/8**; já corrigido na tabela.
+- Estes números **não são comparáveis** com a suite v2 (outras tarefas, outros critérios, contentor com isolamento verificado): ver `2026-10-18-fase5-agentes-qwen3-v2-contentor.md`.
+- A coluna `injeção` conta observações **marcadas** como possível injeção, não tentativas do modelo; a v2 mede as tentativas à parte.

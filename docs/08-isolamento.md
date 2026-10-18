@@ -72,6 +72,92 @@ Por isso a primeira avaliação de agentes (PR #3) correu **sem isolamento de re
 5. **Imagem**: `node:22-slim` por etiqueta; em produção, fixar por *digest* e construir uma imagem própria mínima.
 6. **Sondas medem o que medem**: um nível `strong` significa "as fronteiras comportamentais testadas resistiram", não "é impossível escapar".
 
-## 5. Testes de fronteira
+## 5. Testes de fronteira (ficheiro 1)
 
 `tests/integration/sandbox-boundaries.test.ts` (20 testes): declarado = observado; processo nunca `strong`; rede (loopback e DNS); segredo `0600` e link simbólico; ambiente; FS só de leitura, servidor não montado, sem socket do Docker; sem capacidades/root/`no-new-privileges`; tempo limite pára o contentor; "fork bomb" contida pelo cgroup de PIDs; limite de memória; porta de confiança (`untrusted` sem veredicto, com `process` ou forjado é recusado sem chamar o modelo nem executar comandos; com contentor corre); ficheiros sensíveis nunca chegam à sandbox; links simbólicos para fora recusados.
+
+`tests/integration/sandbox-threat-model.test.ts` (17 testes, ver §6) completa este ficheiro com provas positivas e negativas por propriedade.
+
+## 6. Modelo de ameaças e garantias por ambiente
+
+### Ameaça modelada
+
+O código executado é **escrito por um modelo**, possivelmente induzido por *prompt injection* (README, saída de testes, comentários). Corre como utilizador sem privilégios dentro da sandbox e pode tentar: ler/escrever o anfitrião, alcançar a rede (incluindo a API da Forja e destinos externos), obter privilégios, esgotar recursos, sobreviver ao fim do comando ou contornar os limites.
+
+**Fora do modelo** (não garantido por nada aqui): exploits de kernel ou do runtime de contentores (o kernel é partilhado), canais laterais, um atacante com acesso ao daemon do Docker, comprometimento da cadeia de fornecimento da imagem.
+
+Por isso **"strong" aqui significa apenas**: as fronteiras comportamentais listadas abaixo resistiram aos testes controlados deste ambiente. **Não significa "seguro".**
+
+### Matriz (o que cada ambiente garante — verificado ou não)
+
+Legenda: ✔ verificado por teste que passou neste ambiente · ✘ verificado que NÃO é garantido · ○ não verificado neste ambiente. Ambientes: **Proc** = `ProcessSandbox`; **Cont-dev** = contentor na máquina de desenvolvimento (imagem mínima local, **não** a oficial); **Cont-CI** = contentor no runner do GitHub (`node:22-slim`).
+
+| Propriedade | Proc (dev, root) | Proc (CI, uid 1001) | Cont-dev | Cont-CI |
+|---|---|---|---|---|
+| Sem acesso à rede (loopback do servidor, IP do servidor) | ✔ | ✘ | ✔ | ✔ |
+| Sem rota para IP público nem DNS | ○ | ✘ | ✔ | ✔ (destino externo e DNS) |
+| API real da Forja inalcançável | ○ | ✘ | ✔ | ✔ (CI principal, com Postgres) |
+| Só uma interface de rede (`lo`) | ○ | ✘ | ✔ | ✔ |
+| Não lê segredo `0600`/ambiente do servidor | ✔ | ✘ | ✔ | ✔ |
+| Não vê ficheiros do servidor (fora do espaço de trabalho) | ✘ (vê) | ✘ | ✔ | ✔ |
+| Não escreve fora do espaço de trabalho (`/`, `/etc`, `/proc/sys`, `/sys`, `../`) | ○ | ✘ | ✔ | ✔ |
+| Socket do Docker ausente | n/a | n/a | ✔ | ✔ |
+| Não corre como root; capacidades zero; `no-new-privileges` | parcial (`nobody`) | ✘ | ✔ | ✔ |
+| Namespaces PID/rede/mount/IPC/UTS distintos do anfitrião | ✘ (só rede, PID se root) | ✘ | ✔ | ✔ |
+| `setuid(0)`, `mount`, `unshare`, `chroot`, `su`, `sudo`, subir ulimits falham | ○ | ○ | ✔ (só `setuid` e ulimit: a imagem local não tem os binários) | ✔ (resultado passou; que binários existem em `node:22-slim` não foi registado — ver nota) |
+| Escrever em `cgroup.procs`/`memory.max`/`pids.max` falha | n/a | n/a | ✔ | ✔ |
+| Seccomp ativo (`Seccomp: 2`) | ○ | ○ | ✔ (perfil por omissão do Docker) | ✔ (o teste teria saltado se não fosse 2; nas 3 variantes não saltou) |
+| Limite de memória (OOM) | ○ | ○ | ✔ | ✔ |
+| Limite de processos (fork bomb) | ○ | ○ | ✔ | ✔ |
+| Limite de CPU (`ulimit -t`) | ○ | ○ | ✔ | ✔ |
+| Limite de ficheiro único e do `/tmp` (ENOSPC) | ○ | ○ | ✔ | ✔ |
+| **Quota do espaço de trabalho total** | ✘ | ✘ | ✘ **(não existe)** | ✘ **(não existe)** |
+| Tempo limite pára tudo; filhos que ignoram SIGTERM; sem órfãos nem contentores por limpar | ✔ (grupo de processos) | ○ | ✔ | ✔ |
+| AppArmor/SELinux do anfitrião a confinar o contentor | n/a | n/a | ○ | ○ (o runner é Ubuntu 24.04 com AppArmor; o perfil aplicado não foi lido) |
+
+A coluna "Proc (CI)" é a que justifica a regra: no runner, a sandbox de processo **não isola nada** e por isso **não executa código não confiável** (porta de confiança, `sandbox_insufficient`).
+
+Fonte dos ✔ "Cont-CI": execução `39177049022` (CI principal; 154 testes de integração, 151 passaram, 0 falharam, 3 saltados — dois de fronteira de processo com motivo e o de TLS) e `39177049028` (sonda, 3 variantes: 37 testes cada, 0 falhas; saltados: 1 em `root-sudo`, 3 em `default`, 2 em `userns-relaxed`, incluindo em todos o teste da API da Forja, que ali não tem base de dados e só correu na CI principal). Local: 154 testes de integração passaram com o contentor mínimo.
+
+**Nota (não verificado)**: o teste de privilégios imprime quais das tentativas (`mount`, `unshare`, `chroot`, `su`, `sudo`) tinham binário na imagem; a CI ainda não publicava essa linha. Passa a publicar-se (`# privilégios:`), pelo que a próxima execução dirá se foram tentativas reais ou triviais. Até lá, na CI só está comprovado `setuid(0)` → `EPERM` e `ulimit` não subir.
+
+### Quando uma propriedade não está comprovada
+
+- O teste é **saltado com o motivo** (nunca aprovado) e o nível verificado fica abaixo de `strong`;
+- projetos não confiáveis **não executam** nesse ambiente (`sandbox_insufficient`);
+- é o caso de qualquer runner sem Docker/Podman funcional, e de qualquer execução da `ProcessSandbox` no runner do GitHub.
+
+## 7. Configuração real do contentor (revista)
+
+Comando gerado por `ContainerSandbox.run` (`server/agent/container-sandbox.ts`):
+
+| Aspeto | Valor | Observação |
+|---|---|---|
+| Utilizador | `--user <uid>:<gid>` (`nobody` se o servidor é root; senão o uid do servidor) | sem privilégios no contentor; `--cap-drop ALL`; `no-new-privileges` |
+| Sistema de ficheiros | `--read-only`; só `/work` (bind do espaço de trabalho) e `/tmp` (tmpfs 256 MB, `nosuid`) graváveis | o servidor, `$HOME` e o socket do Docker não são montados |
+| Rede | `--network none` | verificado: só `lo` |
+| Recursos | `--memory/--memory-swap` 1 GiB, `--cpus` 2, `--pids-limit` 256, `ulimit` fsize 64 MiB, nofile 512, core 0, cpu 120 s | memória/PIDs/CPU/ficheiro verificados por teste; **sem quota do total do `/work`** |
+| Seccomp / AppArmor | **não definidos explicitamente**: vale o perfil por omissão do motor | seccomp observado ativo localmente; AppArmor não verificado |
+| Processo 1 | `--init` | filhos órfãos não sobrevivem; verificado |
+| Duração e limpeza | timer + `docker kill` + `docker rm -f`; `--rm` | verificado: nada fica a correr nem parado (`docker ps -a`) |
+| Segredos | ambiente construído de raiz (sem herdar `process.env`); ficheiros sensíveis nem sequer são copiados para o espaço de trabalho | verificado |
+| Imagem | `node:22-slim` por etiqueta | **por fixar por digest**; imagem própria mínima em produção |
+| Rede do anfitrião para dentro | o contentor não publica portas | — |
+
+## 8. O Docker é suficiente?
+
+Depende do cenário; **não** para todos:
+
+- **Avaliações em CI sobre runners efémeros** (o uso atual): aceitável como mitigação. O código só encontra uma VM descartável, sem rede, sem segredos no ambiente do contentor, num repositório privado. O risco residual é um exploit de kernel/runtime que saia do contentor para a VM do runner (cujo `GITHUB_TOKEN` é só de leitura). É um risco **aceite e declarado**, não eliminado.
+- **Servidor da Forja em produção, código de utilizadores diferentes**: **insuficiente**. Kernel partilhado e quem fala com o daemon equivale a root. Recomendação: serviço de execução **separado**, sem acesso à base de dados nem a segredos do servidor, com **microVM (Firecracker/Kata) ou gVisor** por trás da interface `Sandbox`, Podman *rootless* no mínimo, quota de disco e rede apenas por *proxy* com lista de permissões, se alguma vez for preciso.
+- **Máquina do programador**: o contentor protege o servidor local de erros do modelo; não de um atacante que consiga exploits de kernel.
+
+Não se monta o socket do Docker no agente, não se passam segredos ao código executado, e as ferramentas continuam sujeitas a permissões explícitas (confirmação, `allowedTools`, `forbiddenActions`).
+
+## 9. Limitações que permanecem (resumo)
+
+1. Sem quota para o total do espaço de trabalho (teste que o afirma, para ser atualizado se se implementar).
+2. Seccomp/AppArmor dependem do perfil por omissão do anfitrião; só o seccomp foi observado ativo (local e CI); o AppArmor não foi lido.
+3. Imagem não fixada por digest; a validação local usou imagem mínima própria, não a oficial.
+4. Kernel partilhado (ver §8).
+5. Os testes de fuga limitam-se a tentativas comuns de contorno; **não são uma auditoria** nem uma prova de impossibilidade.

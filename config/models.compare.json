@@ -22,7 +22,7 @@
       "backend": "ollama-cmp",
       "upstreamModel": "qwen2.5-coder:7b",
       "author": "Alibaba (Qwen)",
-      "license": "a confirmar (ollama show --license)",
+      "license": "Apache-2.0 (cabeçalho lido no modelo instalado; texto completo por conferir)",
       "contextTokens": 16384,
       "maxOutputTokens": 1536,
       "temperature": 0,

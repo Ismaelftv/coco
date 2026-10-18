@@ -106,8 +106,8 @@ jobs:
           if-no-files-found: ignore
 
   agentes:
-    # Custa ~1 h de CI por combinação: só corre manualmente ou com a etiqueta "avaliar-agentes".
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'avaliar-agentes')
+    # Custa ~1 h de CI por combinação: só corre manualmente ou no momento em que se POE a etiqueta "avaliar-agentes" (não em cada push: retirar e repor a etiqueta para repetir).
+    if: github.event_name == 'workflow_dispatch' || (github.event.action == 'labeled' && github.event.label.name == 'avaliar-agentes')
     # Avaliação dos agentes de programação com modelos locais reais, nos dois
     # modos de ferramentas. O código escrito pelo modelo é executado SÓ em contentor
     # (sandbox verificada como "strong"); se não houver, as tarefas são recusadas.
