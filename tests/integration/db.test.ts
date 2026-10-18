@@ -80,7 +80,9 @@ test('palavra-passe errada é rejeitada', async () => {
   await bad.close();
 });
 
-test('ligação por TLS (sslmode=require)', async () => {
+test('ligação por TLS (sslmode=require)', async (t) => {
+  const ssl = await db.query<{ ssl: string }>("SELECT current_setting('ssl') AS ssl");
+  if (ssl.rows[0]!.ssl !== 'on') return t.skip('servidor sem TLS ativo (ex.: PostgreSQL de serviço na CI)');
   const u = new URL(ctx.url);
   u.searchParams.set('sslmode', 'require');
   const tlsDb = createDb({ url: u.toString(), poolSize: 1 });

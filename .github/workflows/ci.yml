@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: forja
+          POSTGRES_PASSWORD: forja-ci-only
+          POSTGRES_DB: postgres
+          POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forja"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://forja:forja-ci-only@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Enquanto não existir package-lock.json no repositório, gera-o aqui
+      # e publica-o como artefacto para ser revisto e commitado.
+      - name: Instalar dependências
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
+
+      - name: Publicar package-lock.json gerado
+        if: hashFiles('package-lock.json') != '' && github.event_name == 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-lock
+          path: package-lock.json
+          retention-days: 7
+
+      - name: Verificação de tipos
+        run: npm run typecheck
+
+      - name: Testes unitários
+        run: npm test
+
+      - name: Testes de integração (PostgreSQL)
+        run: npm run test:integration
+
+      - name: Instalar Chromium para E2E
+        run: npx playwright install --with-deps chromium
+
+      - name: Testes E2E
+        env:
+          E2E_SCREENSHOTS: ${{ runner.temp }}/screenshots
+        run: |
+          mkdir -p "$E2E_SCREENSHOTS"
+          npm run test:e2e
+
+      - name: Capturas de ecrã dos E2E
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-screenshots
+          path: ${{ runner.temp }}/screenshots
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Auditoria de dependências
+        run: npm audit --audit-level=high
