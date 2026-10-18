@@ -1,12 +1,20 @@
 /**
- * Interface de acesso à base de dados usada por todo o servidor.
- * A implementação atual usa o cliente temporário `pg-wire.ts`; trocar por
- * `pg.Pool` só exige reescrever este ficheiro.
+ * Interface de acesso à base de dados usada por todo o servidor,
+ * implementada sobre `pg` (node-postgres). O resto do código depende apenas
+ * destes tipos, não do driver.
  */
-import { PgConnection, parseDatabaseUrl, type PgConfig, type PgParam, type PgResult } from './pg-wire.ts';
+import pg from 'pg';
 
-export { PgError } from './pg-wire.ts';
-export type { PgParam };
+export const PgError = pg.DatabaseError;
+export type PgError = pg.DatabaseError;
+
+export type PgParam = string | number | bigint | boolean | Date | Buffer | null | undefined | object;
+
+export interface PgResult<R> {
+  rows: R[];
+  rowCount: number;
+  command: string;
+}
 
 export interface Queryable {
   query<R = Record<string, unknown>>(sql: string, params?: readonly PgParam[]): Promise<PgResult<R>>;
@@ -32,95 +40,79 @@ export interface DbOptions {
   applicationName?: string;
 }
 
-export function createDb(options: DbOptions): Db {
-  const base = parseDatabaseUrl(options.url);
-  const config: PgConfig = {
-    ...base,
-    connectTimeoutMs: options.connectTimeoutMs ?? 5_000,
-    runtimeParams: {
-      application_name: options.applicationName ?? 'forja',
-      statement_timeout: String(options.statementTimeoutMs ?? 15_000),
-      idle_in_transaction_session_timeout: '30000',
-      client_encoding: 'UTF8',
-      TimeZone: 'UTC',
-    },
+// int8 (COUNT, SUM, ids) como number quando é seguro; senão texto, sem perder precisão.
+pg.types.setTypeParser(pg.types.builtins.INT8, (v: string) => {
+  const n = Number(v);
+  return Number.isSafeInteger(n) ? n : v;
+});
+
+/** Valores JSON vão sempre como texto JSON (o pg converteria arrays em arrays do PostgreSQL). */
+function prepare(params: readonly PgParam[]): unknown[] {
+  return params.map((p) =>
+    p !== null && typeof p === 'object' && !(p instanceof Date) && !Buffer.isBuffer(p) ? JSON.stringify(p) : p,
+  );
+}
+
+/**
+ * `sslmode` é interpretado aqui, explicitamente: `require` cifra sem validar o
+ * certificado; `verify-full` valida certificado e nome do servidor.
+ */
+function poolConfig(options: DbOptions): pg.PoolConfig {
+  const url = new URL(options.url);
+  const sslmode = url.searchParams.get('sslmode') ?? 'disable';
+  url.searchParams.delete('sslmode');
+  let ssl: pg.PoolConfig['ssl'] = false;
+  if (sslmode === 'require') ssl = { rejectUnauthorized: false };
+  else if (sslmode === 'verify-full') ssl = { rejectUnauthorized: true, servername: url.hostname };
+  else if (sslmode !== 'disable') throw new Error(`sslmode não suportado: ${sslmode}`);
+  return {
+    connectionString: url.toString(),
+    ssl,
+    max: options.poolSize ?? 10,
+    connectionTimeoutMillis: options.connectTimeoutMs ?? 5_000,
+    statement_timeout: options.statementTimeoutMs ?? 15_000,
+    idle_in_transaction_session_timeout: 30_000,
+    application_name: options.applicationName ?? 'forja',
+    options: '-c TimeZone=UTC',
   };
-  const max = options.poolSize ?? 10;
-  const idle: PgConnection[] = [];
-  const waiting: ((c: PgConnection) => void)[] = [];
-  let total = 0;
-  let closing = false;
+}
 
-  async function acquire(): Promise<PgConnection> {
-    if (closing) throw new Error('Base de dados a fechar');
-    while (idle.length) {
-      const c = idle.pop()!;
-      if (!c.closed) return c;
-      total--;
-    }
-    if (total < max) {
-      total++;
-      try {
-        return await PgConnection.connect(config);
-      } catch (e) {
-        total--;
-        throw e;
-      }
-    }
-    return new Promise((resolve) => waiting.push(resolve));
-  }
+function wrap<R>(r: pg.QueryResult): PgResult<R> {
+  return { rows: r.rows as R[], rowCount: r.rowCount ?? r.rows.length, command: r.command };
+}
 
-  function release(c: PgConnection) {
-    if (c.closed) {
-      total--;
-      // Uma ligação partida liberta espaço: acorda quem espera com uma ligação nova.
-      const w = waiting.shift();
-      if (w) {
-        total++;
-        PgConnection.connect(config).then(w, () => {
-          total--;
-        });
-      }
-      return;
-    }
-    const w = waiting.shift();
-    if (w) w(c);
-    else idle.push(c);
-  }
+export function createDb(options: DbOptions): Db {
+  const pool = new pg.Pool(poolConfig(options));
+  // Um erro numa ligação inativa (ex.: servidor reiniciado) não deve derrubar o processo.
+  pool.on('error', (e) => console.error(`[db] ligação inativa falhou: ${e.message}`));
 
   return {
-    async query(sql, params = []) {
-      const c = await acquire();
+    async query<R>(sql: string, params: readonly PgParam[] = []) {
+      return wrap<R>(await pool.query(sql, prepare(params)));
+    },
+    async tx<T>(fn: (q: TxClient) => Promise<T>): Promise<T> {
+      const client = await pool.connect();
+      let broken = false;
       try {
-        return await c.query(sql, params);
+        await client.query('BEGIN');
+        const tx: TxClient = {
+          query: async <R,>(sql: string, params: readonly PgParam[] = []) => wrap<R>(await client.query(sql, prepare(params))),
+          // Sem parâmetros o pg usa o protocolo simples, que aceita várias instruções.
+          exec: (sql: string) => client.query(sql),
+        };
+        const result = await fn(tx);
+        await client.query('COMMIT');
+        return result;
+      } catch (e) {
+        await client.query('ROLLBACK').catch(() => {
+          broken = true;
+        });
+        throw e;
       } finally {
-        release(c);
+        client.release(broken);
       }
     },
-    async tx(fn) {
-      const c = await acquire();
-      try {
-        await c.query('BEGIN');
-        try {
-          const client: TxClient = {
-            query: <R,>(sql: string, params: readonly PgParam[] = []) => c.query<R>(sql, params),
-            exec: (sql: string) => c.exec(sql),
-          };
-          const result = await fn(client);
-          await c.query('COMMIT');
-          return result;
-        } catch (e) {
-          if (!c.closed) await c.query('ROLLBACK').catch(() => undefined);
-          throw e;
-        }
-      } finally {
-        release(c);
-      }
-    },
-    async close() {
-      closing = true;
-      await Promise.all(idle.splice(0).map((c) => c.close()));
-    },
-    stats: () => ({ total, idle: idle.length, waiting: waiting.length }),
+    close: () => pool.end(),
+    stats: () => ({ total: pool.totalCount, idle: pool.idleCount, waiting: pool.waitingCount }),
   };
 }

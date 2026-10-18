@@ -8,7 +8,6 @@ import { HttpError, Router, contentDisposition, parseCookies, serializeCookie, u
 import { hashPassword, needsRehash, verifyPassword } from '../../server/security/password.ts';
 import { likePattern } from '../../server/modules/conversations.ts';
 import { loadConfig } from '../../server/config.ts';
-import { parseValue, serializeParam } from '../../server/db/pg-wire.ts';
 
 test('trimHistory mantém a última mensagem e começa num turno do utilizador', () => {
   const msgs = [
@@ -98,15 +97,4 @@ test('configuração: falha cedo e regras de produção', () => {
   const prod = loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://forja.exemplo' });
   assert.equal(prod.cookieSecure, true);
   assert.throws(() => loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://f.x', SCRYPT_LOG_N: '12' }), /SCRYPT/);
-});
-
-test('serialização de parâmetros PostgreSQL', () => {
-  assert.equal(serializeParam(null), null);
-  assert.equal(serializeParam(true)!.toString(), 't');
-  assert.equal(serializeParam(Buffer.from([1, 255]))!.toString(), '\\x01ff');
-  assert.equal(serializeParam({ a: 'é' })!.toString(), '{"a":"é"}');
-  assert.throws(() => serializeParam(Number.NaN));
-  assert.equal((parseValue(1184, '2026-10-18 12:00:00.5+00') as Date).toISOString(), '2026-10-18T12:00:00.500Z');
-  assert.equal((parseValue(1184, '2026-10-18 09:00:00-03') as Date).toISOString(), '2026-10-18T12:00:00.000Z');
-  assert.equal(parseValue(20, '99999999999999999999'), '99999999999999999999');
 });
