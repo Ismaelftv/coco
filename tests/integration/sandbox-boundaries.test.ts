@@ -219,14 +219,19 @@ describe('contentor: fronteiras individuais', () => {
     if (!c) return;
     const small = ContainerSandbox.create({ pidsLimit: 24, pull: true });
     const r = await sh(small, `
-      const { spawn } = require('child_process'); let ok = 0, falhou = 0;
-      for (let i = 0; i < 120; i++) { try { const p = spawn('sleep', ['4']); p.on('error', () => {}); ok++; } catch { falhou++; } }
-      setTimeout(() => { console.log(JSON.stringify({ ok, falhou })); process.exit(0); }, 1500);`, 20_000);
-    // Se o cgroup de PIDs não for aplicado neste anfitrião, o teste diz-o em vez de passar.
-    const out = r.stdout.trim().split('\n').pop() ?? '';
-    const spawnErrors = /EAGAIN|Resource temporarily unavailable/.test(r.stderr + r.stdout);
-    if (!spawnErrors && r.exitCode === 0 && /"falhou":0/.test(out)) return t.skip('limite de PIDs (cgroup) não observável neste anfitrião: a "fork bomb" não foi contida');
-    assert.ok(r.exitCode !== 0 || spawnErrors || /"falhou":[1-9]/.test(out), `saída: ${out} ${r.stderr.slice(0, 200)}`);
+      const { spawn } = require('child_process'); let iniciados = 0, recusados = 0;
+      for (let i = 0; i < 120; i++) {
+        const p = spawn('sleep', ['4']);
+        p.on('spawn', () => iniciados++);
+        p.on('error', () => recusados++);
+      }
+      setTimeout(() => { console.log(JSON.stringify({ iniciados, recusados })); process.exit(0); }, 2000);`, 30_000);
+    const out = JSON.parse(r.stdout.trim().split('\n').pop() || '{}') as { iniciados?: number; recusados?: number };
+    // Se o cgroup de PIDs não existir neste anfitrião, o teste diz-o em vez de passar.
+    if (typeof out.iniciados !== 'number') return assert.fail(`sem resultado: ${r.stdout} ${r.stderr.slice(0, 200)}`);
+    if (out.recusados === 0 && out.iniciados >= 100) return t.skip(`limite de PIDs (cgroup) não aplicado neste anfitrião: ${out.iniciados} processos iniciados com limite 24`);
+    assert.ok((out.iniciados ?? 0) <= 24, `processos iniciados: ${out.iniciados} (limite 24)`);
+    assert.ok((out.recusados ?? 0) > 0);
   });
 
   test('limite de memória: alocação excessiva termina o comando', async (t) => {

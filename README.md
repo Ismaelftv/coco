@@ -49,3 +49,4 @@ Os testes de integração e E2E criam e apagam uma base de dados própria em `TE
 - [`docs/05-api.md`](docs/05-api.md) — API, modelo de dados, segurança, ADR 0008–0011
 - [`docs/06-modelos.md`](docs/06-modelos.md) — modelos locais, catálogo, hardware, avaliação, ADR 0012–0013
 - [`docs/07-agentes.md`](docs/07-agentes.md) — ferramentas de programação, ciclo de agentes, sandbox, avaliação (Fase 5)
+- [`docs/08-isolamento.md`](docs/08-isolamento.md) — garantias de isolamento verificadas (máquina local vs CI), sandbox em contentor, política de confiança
