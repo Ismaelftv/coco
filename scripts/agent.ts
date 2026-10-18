@@ -7,7 +7,12 @@
  *   npm run agent -- --config config/models.json --model qwen3-4b-local \
  *     --project ./meu-projeto --goal "Corrige o teste que falha em src/x.test.js" \
  *     [--test-cmd "npm test"] [--mode native|prompted] [--max-iterations 30] \
+ *     [--sandbox auto|container|process] [--trust-project] \
  *     [--patch alteracoes.patch] [--out relatorio.json]
+ *
+ * Segurança: o código do projeto e o escrito pelo modelo são executados. Por omissão o
+ * projeto é "não confiável" e só corre numa sandbox verificada como "strong" (contentor).
+ * --trust-project aceita o risco ao nível de isolamento verificado (impresso no arranque).
  *
  * Operações que exigem confirmação (apagar, ficheiros sensíveis) são perguntadas
  * no terminal; sem terminal interativo são recusadas.
@@ -16,7 +21,7 @@ import { createInterface } from 'node:readline/promises';
 import { writeFile } from 'node:fs/promises';
 import { parseArgs } from 'node:util';
 import { runAgent, describeCriterion, type AgentEvent, type SuccessCriterion } from '../server/agent/loop.ts';
-import { ProcessSandbox } from '../server/agent/sandbox.ts';
+import { selectSandbox, type SandboxChoice } from '../server/agent/sandbox-factory.ts';
 import { detectCommands, type CommandSpec, type ConfirmationRequest } from '../server/agent/tools.ts';
 import { Workspace } from '../server/agent/workspace.ts';
 import { loadCatalog } from '../server/providers/catalog.ts';
@@ -58,6 +63,8 @@ async function main() {
       'test-cmd': { type: 'string' },
       mode: { type: 'string' },
       'max-iterations': { type: 'string', default: '30' },
+      sandbox: { type: 'string', default: 'auto' },
+      'trust-project': { type: 'boolean', default: false },
       patch: { type: 'string' },
       out: { type: 'string' },
     },
@@ -72,7 +79,9 @@ async function main() {
   if (model.status === 'offline') throw new Error(`Modelo indisponível: ${model.statusDetail}`);
 
   const ws = await Workspace.create(values.project);
-  const sandbox = new ProcessSandbox();
+  const selection = await selectSandbox(values.sandbox as SandboxChoice);
+  const { sandbox, verdict } = selection;
+  const trust = values['trust-project'] ? 'trusted' : 'untrusted';
   let commands: CommandSpec[] = await detectCommands(ws.root);
   if (values['test-cmd']) {
     const argv = values['test-cmd'].split(/\s+/).filter(Boolean);
@@ -83,8 +92,13 @@ async function main() {
   console.log(`Modelo: ${model.label}${model.author ? ` (${model.author}, ${model.license})` : ''}`);
   console.log(`Espaço de trabalho (cópia): ${ws.root}`);
   if (ws.omitted.length) console.log(`Ficheiros sensíveis não copiados: ${ws.omitted.join(', ')}`);
-  console.log(`Isolamento: rede ${sandbox.isolation.network}, utilizador ${sandbox.isolation.user}, limites ${sandbox.isolation.resourceLimits ? 'sim' : 'não'}`);
-  for (const n of sandbox.isolation.notes) console.log(`  aviso: ${n}`);
+  console.log(`Sandbox: ${sandbox.name} · isolamento VERIFICADO: ${verdict.level.toUpperCase()} · projeto: ${trust === 'trusted' ? 'CONFIÁVEL (risco aceite ao nível verificado)' : 'não confiável'}`);
+  for (const k of verdict.checks.filter((c) => c.requiredFor !== 'info' && !c.passed)) console.log(`  ✘ ${k.title} — ${k.evidence}`);
+  for (const x of verdict.contradictions) console.log(`  ⚠ ${x}`);
+  for (const n of selection.skipped) console.log(`  (alternativa descartada: ${n})`);
+  if (trust === 'untrusted' && verdict.level !== 'strong') {
+    console.log('\nEste projeto não é confiável e não há sandbox com isolamento forte (contentor): o agente não vai executar.\nInstale/arranque Docker ou Podman, ou use --trust-project se o projeto for seu E aceitar o risco ao nível acima.');
+  }
   if (criteria.length === 0) console.log('Aviso: sem comando de testes, o sucesso não pode ser verificado pelo sistema.');
 
   const rl = process.stdin.isTTY ? createInterface({ input: process.stdin, output: process.stdout }) : null;
@@ -100,6 +114,8 @@ async function main() {
       model: { id: model.id, label: model.label, author: model.author ?? undefined, license: model.license ?? undefined, hosting: model.hosting },
       workspace: ws,
       sandbox,
+      verdict,
+      trust,
       commands,
       task: { goal: values.goal, criteria },
       ...(values.mode === 'native' || values.mode === 'prompted' ? { toolCalling: values.mode } : {}),

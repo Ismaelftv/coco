@@ -99,4 +99,8 @@ jobs:
             echo "::notice title=$f::$line"
             { grep -E '^not ok' "$RUNNER_TEMP/$f.txt" || true; } | head -5 | while read -r l; do echo "::error title=$f::$l"; done
           done
+          if [ -f "$RUNNER_TEMP/integration.txt" ]; then
+            { grep -E 'isolamento verificado' "$RUNNER_TEMP/integration.txt" || true; } | head -3 | while read -r l; do echo "::notice title=isolamento::$l"; done
+            { grep -E '# SKIP' "$RUNNER_TEMP/integration.txt" || true; } | head -6 | while read -r l; do echo "::notice title=saltado::$l"; done
+          fi
           if [ -f "$RUNNER_TEMP/audit.txt" ]; then echo "::notice title=audit::$(grep -E 'vulnerabilit|Severity|^[a-z@][^ ]*  ' "$RUNNER_TEMP/audit.txt" | head -12 | tr '\n' ' ' || true)"; fi

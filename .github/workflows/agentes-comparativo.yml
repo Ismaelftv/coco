@@ -1,0 +1,110 @@
+name: Agentes — comparação de modelos (manual)
+
+# Compara modelos locais no MESMO conjunto de tarefas e critérios
+# (evals/agent/tarefas.json), com a mesma configuração (config/models.compare.json).
+# É manual porque custa minutos de CI: o repositório é privado e os modelos correm em CPU.
+# O código escrito pelo modelo é executado SÓ em contentor (sandbox "strong" verificada).
+# Resultados em categorias separadas (execução, qualidade, injeção, sandbox, custo).
+# Não altera o modelo predefinido: serve de evidência para uma decisão humana.
+#
+# Dispara-se por workflow_dispatch, ou (para um piloto de 1 tarefa) ao pôr a etiqueta
+# "comparar-modelos" num pull request.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: 'Repetições por tarefa'
+        default: '1'
+      only:
+        description: 'Tarefas (ids separados por vírgula; vazio = todas)'
+        default: ''
+      max_iterations:
+        description: 'Máximo de iterações por tarefa'
+        default: '15'
+      runner:
+        description: 'Runner (ex.: ubuntu-latest, ou um runner maior)'
+        default: 'ubuntu-latest'
+
+permissions:
+  contents: read
+
+jobs:
+  comparar:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'comparar-modelos'
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 300
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [qwen3-4b-cmp, qwen25-coder-7b-cmp]
+        mode: [native, prompted]
+    defaults:
+      run:
+        shell: bash -o pipefail -e {0}
+    env:
+      OLLAMA_URL: http://127.0.0.1:11434
+      CFG: config/models.compare.json
+      REPEAT: ${{ inputs.repeat || '1' }}
+      MAXIT: ${{ inputs.max_iterations || '15' }}
+      ONLY: ${{ github.event_name == 'pull_request' && 'corrigir-bug' || inputs.only }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
+      - name: Hardware do runner
+        run: |
+          echo "::notice title=hardware ${{ matrix.model }} ${{ matrix.mode }}::$(nproc) CPU; $(free -m | awk '/Mem:/{print $2}') MB RAM; $(df -h / | awk 'NR==2{print $4}') livres; $(lscpu | awk -F: '/Model name/{gsub(/^ +/,"",$2);print $2}')"
+
+      - name: Instalar e arrancar o Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          sudo systemctl stop ollama 2>/dev/null || true
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf "$OLLAMA_URL/api/tags" > /dev/null && break; sleep 1; done
+
+      - name: Descarregar o modelo e ler as capacidades
+        id: modelo
+        run: |
+          TAG=$(jq -r --arg id "${{ matrix.model }}" '.models[] | select(.id==$id) | .upstreamModel' "$CFG")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          START=$(date +%s)
+          ollama pull "$TAG"
+          echo "pull_s=$(( $(date +%s) - START ))" >> "$GITHUB_OUTPUT"
+          SHOW=$(curl -s "$OLLAMA_URL/api/show" -d "{\"model\":\"$TAG\"}")
+          echo "$SHOW" | jq -c '{capabilities, details, license_inicio: (.license // "" | .[0:160])}' > "$RUNNER_TEMP/show.json"
+          echo "::notice title=modelo $TAG::$(cat "$RUNNER_TEMP/show.json" | head -c 1500) | descarga: $(( $(date +%s) - START )) s | $(ollama list | grep "$TAG" | awk '{print $3,$4}')"
+          if [ "${{ matrix.mode }}" = "native" ] && ! echo "$SHOW" | jq -e '.capabilities | index("tools")' > /dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=saltado ${{ matrix.model }} native::o modelo $TAG NÃO declara a capacidade 'tools' no Ollama; o modo nativo não foi avaliado (usar o modo prompted)."
+          fi
+
+      - name: Avaliação (sandbox em contentor)
+        if: steps.modelo.outputs.skip != 'true'
+        run: |
+          ARGS=()
+          [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
+          npx tsx scripts/agent-eval.ts --config "$CFG" --model "${{ matrix.model }}" --mode "${{ matrix.mode }}" \
+            --sandbox container --repeat "$REPEAT" --max-iterations "$MAXIT" \
+            "${ARGS[@]}" --out "$RUNNER_TEMP/agentes.json" 2>&1 | tee "$RUNNER_TEMP/agentes.txt" || true
+
+      - name: Resultados completos
+        if: always() && steps.modelo.outputs.skip != 'true'
+        run: |
+          [ -f "$RUNNER_TEMP/agentes.json" ] && python3 scripts/ci-annotate.py "cmp-${{ matrix.model }}-${{ matrix.mode }}" "$RUNNER_TEMP/agentes.json" || true
+          python3 scripts/ci-annotate.py "cmp-modelo-${{ matrix.model }}-${{ matrix.mode }}" "$RUNNER_TEMP/show.json" || true
+          sed -n '/══ Resultados/,$p' "$RUNNER_TEMP/agentes.txt" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | while read -r l; do echo "::notice title=cmp ${{ matrix.model }} ${{ matrix.mode }}::$l"; done
+          grep -E '^(Modelo|Sandbox)' "$RUNNER_TEMP/agentes.txt" | head -2 | while read -r l; do echo "::notice title=cmp ${{ matrix.model }} ${{ matrix.mode }}::$l"; done
+          tail -5 "$RUNNER_TEMP/ollama.log" | grep -iE 'error|oom|killed|out of memory' | while read -r l; do echo "::warning title=ollama ${{ matrix.model }}::$l"; done || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cmp-${{ matrix.model }}-${{ matrix.mode }}
+          path: ${{ runner.temp }}/agentes.json
+          if-no-files-found: ignore

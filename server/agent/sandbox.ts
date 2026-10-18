@@ -23,9 +23,18 @@ import { readdirSync, lstatSync, lchownSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
+/**
+ * O que a sandbox DECLARA aplicar. É uma alegação, não uma garantia: as
+ * garantias só existem depois de verificadas por comportamento (isolation.ts).
+ */
 export interface IsolationReport {
+  kind: 'process' | 'container';
   network: 'isolated' | 'not_isolated';
   user: 'unprivileged' | 'same_as_server';
+  /** Processos do servidor invisíveis ao comando (namespace de PIDs). */
+  pidNamespace: boolean;
+  /** `shared_host`: vê o sistema de ficheiros do servidor; `container_private`: só vê a imagem e o espaço de trabalho. */
+  filesystem: 'shared_host' | 'container_private';
   resourceLimits: boolean;
   envScrubbed: true;
   notes: string[];
@@ -57,6 +66,7 @@ export interface SandboxResult {
 }
 
 export interface Sandbox {
+  readonly name: string;
   readonly isolation: IsolationReport;
   run(options: SandboxRunOptions): Promise<SandboxResult>;
 }
@@ -71,15 +81,15 @@ export interface ProcessSandboxOptions {
   nodeHeapMb?: number;
 }
 
-const NOBODY = 65534;
+export const NOBODY = 65534;
 
-function probe(argv: string[]): boolean {
+export function canRun(argv: string[]): boolean {
   const r = spawnSync(argv[0]!, argv.slice(1), { stdio: 'ignore', timeout: 5_000 });
   return r.status === 0;
 }
 
 /** Saída limitada que guarda o início e o fim (o resumo dos testes costuma estar no fim). */
-class CappedBuffer {
+export class CappedBuffer {
   private head = '';
   private tail = '';
   private dropped = 0;
@@ -106,7 +116,7 @@ class CappedBuffer {
   }
 }
 
-function chownTree(dir: string, uid: number, gid: number) {
+export function chownTree(dir: string, uid: number, gid: number) {
   lchownSync(dir, uid, gid);
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -117,6 +127,7 @@ function chownTree(dir: string, uid: number, gid: number) {
 }
 
 export class ProcessSandbox implements Sandbox {
+  readonly name = 'process';
   readonly isolation: IsolationReport;
   private readonly prefix: string[];
   private readonly dropPrivileges: boolean;
@@ -125,15 +136,19 @@ export class ProcessSandbox implements Sandbox {
     const notes: string[] = [];
     const isRoot = process.getuid?.() === 0;
     let netPrefix: string[] = [];
-    if (probe(['unshare', '-n', 'true'])) netPrefix = ['unshare', '-n', '--'];
-    else if (probe(['unshare', '-rn', 'true'])) {
+    let pidNs = false;
+    if (isRoot && canRun(['unshare', '-n', '-p', '-f', '--mount-proc', 'true'])) {
+      netPrefix = ['unshare', '-n', '-p', '-f', '--mount-proc', '--'];
+      pidNs = true;
+    } else if (canRun(['unshare', '-n', 'true'])) netPrefix = ['unshare', '-n', '--'];
+    else if (canRun(['unshare', '-rn', 'true'])) {
       netPrefix = ['unshare', '-rn', '--'];
       notes.push('Rede isolada com namespace de utilizador (o processo vê-se como root dentro do namespace, sem privilégios fora dele).');
     } else notes.push('Não foi possível criar um namespace de rede: os comandos TÊM acesso à rede.');
 
-    const hasPrlimit = probe(['prlimit', '--version']);
+    const hasPrlimit = canRun(['prlimit', '--version']);
     if (!hasPrlimit) notes.push('prlimit indisponível: sem limites de CPU/ficheiros/processos.');
-    this.dropPrivileges = isRoot && probe(['setpriv', '--version']);
+    this.dropPrivileges = isRoot && canRun(['setpriv', '--version']);
     if (!this.dropPrivileges) {
       notes.push(isRoot ? 'setpriv indisponível: os comandos correm como root.' : 'Os comandos correm com o mesmo utilizador (não root) do servidor.');
     }
@@ -154,9 +169,14 @@ export class ProcessSandbox implements Sandbox {
       : [];
     const drop = this.dropPrivileges ? ['setpriv', `--reuid=${NOBODY}`, `--regid=${NOBODY}`, '--clear-groups', '--'] : [];
     this.prefix = [...netPrefix, ...limits, ...drop];
+    if (!pidNs) notes.push('Sem namespace de PIDs: o comando vê a lista de processos do servidor.');
+    notes.push('Sistema de ficheiros do servidor visível (só leitura do que o utilizador do comando puder ler). Isolamento de processo, não de máquina.');
     this.isolation = {
+      kind: 'process',
       network: netPrefix.length ? 'isolated' : 'not_isolated',
       user: this.dropPrivileges ? 'unprivileged' : 'same_as_server',
+      pidNamespace: pidNs,
+      filesystem: 'shared_host',
       resourceLimits: hasPrlimit,
       envScrubbed: true,
       notes,

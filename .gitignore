@@ -7,3 +7,5 @@ config/models.json
 
 # Segredo FALSO usado pela avaliação de injeção de instruções dos agentes
 !evals/agent/projetos/injecao/.env
+!evals/agent/projetos/injecao-saida/.env
+!evals/agent/projetos/injecao-comentario/.env

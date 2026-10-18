@@ -1,0 +1,73 @@
+name: Isolamento da sandbox (diagnóstico)
+
+# Mede, por COMPORTAMENTO, que garantias de isolamento existem neste runner.
+# Não assume que são iguais às de outra máquina. Três variantes do mesmo runner:
+#   default           — como o runner vem
+#   userns-relaxed    — com o AppArmor a permitir namespaces de utilizador sem privilégios
+#   root-sudo         — o servidor a correr como root (como na máquina de desenvolvimento)
+# e corre os testes de fronteira, que se saltam (com motivo) onde a garantia não existe.
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'server/agent/**'
+      - 'scripts/sandbox-probe.ts'
+      - 'tests/integration/sandbox-boundaries.test.ts'
+      - '.github/workflows/sandbox-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [default, userns-relaxed, root-sudo]
+    defaults:
+      run:
+        shell: bash -o pipefail -e {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
+      - name: Preparar a variante
+        run: |
+          if [ "${{ matrix.variant }}" = "userns-relaxed" ]; then
+            sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          fi
+          echo "runner: $(nproc) CPU, $(free -m | awk '/Mem:/{print $2}') MB RAM, $(uname -r)"
+
+      - name: Sonda de isolamento
+        run: |
+          if [ "${{ matrix.variant }}" = "root-sudo" ]; then
+            sudo env "PATH=$PATH" npx tsx scripts/sandbox-probe.ts --label "${{ matrix.variant }}" --out "$RUNNER_TEMP/probe.json" 2>&1 | tee "$RUNNER_TEMP/probe.txt"
+          else
+            npx tsx scripts/sandbox-probe.ts --label "${{ matrix.variant }}" --out "$RUNNER_TEMP/probe.json" 2>&1 | tee "$RUNNER_TEMP/probe.txt"
+          fi
+
+      - name: Testes de fronteira
+        run: |
+          if [ "${{ matrix.variant }}" = "root-sudo" ]; then
+            sudo env "PATH=$PATH" node --import tsx --test tests/integration/sandbox-boundaries.test.ts 2>&1 | tee "$RUNNER_TEMP/boundaries.txt" || true
+          else
+            node --import tsx --test tests/integration/sandbox-boundaries.test.ts 2>&1 | tee "$RUNNER_TEMP/boundaries.txt" || true
+          fi
+
+      - name: Resumo
+        if: always()
+        run: |
+          python3 scripts/ci-annotate.py "probe-${{ matrix.variant }}" "$RUNNER_TEMP/probe.json"
+          { grep -E '^(Anfitrião|  [a-z_ -]+ {2,}|process|container|  [✔✘⚠])' "$RUNNER_TEMP/probe.txt" || true; } > "$RUNNER_TEMP/probe-resumo.txt"
+          echo "::notice title=sonda ${{ matrix.variant }}::$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$RUNNER_TEMP/probe-resumo.txt" | head -c 3500)"
+          line=$(grep -E '^# (tests|pass|fail|skipped)' "$RUNNER_TEMP/boundaries.txt" | tr '\n' ' ' || true)
+          echo "::notice title=fronteiras ${{ matrix.variant }}::$line"
+          { grep -E '# SKIP' "$RUNNER_TEMP/boundaries.txt" || true; } | head -6 | while read -r l; do echo "::notice title=saltado ${{ matrix.variant }}::$l"; done
+          { grep -E '^\s*not ok' "$RUNNER_TEMP/boundaries.txt" || true; } | head -6 | while read -r l; do echo "::error title=fronteiras ${{ matrix.variant }}::$l"; done
+          { grep -E 'isolamento verificado' "$RUNNER_TEMP/boundaries.txt" || true; } | head -3 | while read -r l; do echo "::notice title=nível ${{ matrix.variant }}::$l"; done
+          ! grep -qE '^\s*not ok' "$RUNNER_TEMP/boundaries.txt"
