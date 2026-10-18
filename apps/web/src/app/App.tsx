@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { User } from '../../../../shared/contract.ts';
+import type { ModelInfo, User } from '../../../../shared/contract.ts';
 import { Composer } from '../components/Composer.tsx';
 import { EmptyState } from '../components/EmptyState.tsx';
 import { Icon, Logo } from '../components/Icon.tsx';
 import { MessageList } from '../components/MessageList.tsx';
+import { modelBadge } from '../components/ModelPicker.tsx';
 import { Sidebar, type LegacyOffer } from '../components/Sidebar.tsx';
 import { Toasts } from '../components/Toasts.tsx';
 import { AuthScreen } from '../features/auth/AuthScreen.tsx';
@@ -123,6 +124,8 @@ function ChatApp({ user, onLogout }: { user: User; onLogout(): Promise<void> }) 
   }, [compact]);
 
   const generatingId = chat.state.generation?.conversationId ?? null;
+  const selectedInfo = chat.models.status === 'ready' ? chat.models.models.find((m) => m.id === chat.selectedModel) : undefined;
+  const modelNote = describeModel(selectedInfo);
 
   let thread;
   if (active && !active.loaded) {
@@ -155,7 +158,11 @@ function ChatApp({ user, onLogout }: { user: User; onLogout(): Promise<void> }) 
   } else {
     thread = (
       <div className="thread thread--empty">
-        <EmptyState disabled={chat.isGenerating || !chat.selectedModel} onPick={(prompt) => chat.send(prompt)} />
+        <EmptyState
+          disabled={chat.isGenerating || !chat.selectedModel}
+          simulated={!selectedInfo || selectedInfo.hosting === 'simulated'}
+          onPick={(prompt) => chat.send(prompt)}
+        />
       </div>
     );
   }
@@ -227,9 +234,11 @@ function ChatApp({ user, onLogout }: { user: User; onLogout(): Promise<void> }) 
             </button>
           ) : null}
           <h1 className="topbar__title">{active?.title ?? 'Nova conversa'}</h1>
-          <span className="badge badge--simulated topbar__badge" title="Nenhum modelo de IA está ligado.">
-            Modo simulado
-          </span>
+          {selectedInfo ? (
+            <span className={`badge badge--${modelBadge(selectedInfo).tone} topbar__badge`} title={modelNote}>
+              {selectedInfo.hosting === 'simulated' ? 'Modo simulado' : selectedInfo.hosting === 'self-hosted' ? 'Modelo local' : 'Serviço externo'}
+            </span>
+          ) : null}
         </header>
 
         {thread}
@@ -244,9 +253,19 @@ function ChatApp({ user, onLogout }: { user: User; onLogout(): Promise<void> }) 
           onSend={chat.send}
           onStop={chat.stop}
           autoFocusKey={chat.state.activeId ?? 'new'}
+          modelNote={modelNote}
         />
       </main>
       <Toasts notices={chat.notices} onDismiss={chat.dismissNotice} />
     </div>
   );
+}
+
+/** Frase honesta sobre quem está a gerar as respostas. */
+function describeModel(m: ModelInfo | undefined): string {
+  if (!m) return 'Nenhum modelo disponível.';
+  if (m.hosting === 'simulated') return 'Fornecedor simulado: as respostas não vêm de um modelo de IA.';
+  const by = [m.author, m.license].filter(Boolean).join(', ');
+  const where = m.hosting === 'self-hosted' ? 'a correr na infraestrutura da Forja' : 'serviço externo';
+  return `Respostas de ${m.label}${by ? ` (${by})` : ''}, ${where}. Os modelos podem errar: verifica informação importante.`;
 }

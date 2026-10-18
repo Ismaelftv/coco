@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { createSseParser } from '../../apps/web/src/lib/sse.ts';
+import { createSseParser } from '../../shared/sse.ts';
 import { formatSse } from '../../server/sse.ts';
 
 test('analisa eventos completos', () => {

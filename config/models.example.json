@@ -1,0 +1,74 @@
+{
+  "backends": [
+    {
+      "id": "ollama-local",
+      "kind": "ollama",
+      "baseUrl": "http://127.0.0.1:11434",
+      "hosting": "self-hosted",
+      "extraBody": { "keep_alive": "30m" }
+    },
+    {
+      "id": "vllm-gpu",
+      "kind": "openai-compatible",
+      "baseUrl": "http://127.0.0.1:8000/v1",
+      "hosting": "self-hosted",
+      "apiKeyEnv": "VLLM_API_KEY",
+      "extraBody": { "chat_template_kwargs": { "enable_thinking": false } }
+    },
+    {
+      "id": "openai",
+      "kind": "openai-compatible",
+      "baseUrl": "https://api.openai.com/v1",
+      "hosting": "external",
+      "apiKeyEnv": "OPENAI_API_KEY"
+    }
+  ],
+  "models": [
+    {
+      "id": "qwen3-4b-local",
+      "label": "Qwen3 4B",
+      "description": "Desenvolvimento local, funciona em CPU com 8 GB de RAM.",
+      "backend": "ollama-local",
+      "upstreamModel": "qwen3:4b",
+      "author": "Alibaba (Qwen)",
+      "license": "Apache-2.0",
+      "contextTokens": 8192,
+      "maxOutputTokens": 2048,
+      "temperature": 0.7
+    },
+    {
+      "id": "qwen3-8-27b-local",
+      "label": "Qwen3.8 27B",
+      "description": "Qualidade superior; requer GPU de 24 GB (ou 16 GB com parte em CPU).",
+      "backend": "ollama-local",
+      "upstreamModel": "qwen3.8:27b",
+      "author": "Alibaba (Qwen)",
+      "license": "Apache-2.0",
+      "contextTokens": 16384,
+      "maxOutputTokens": 4096,
+      "temperature": 0.7
+    },
+    {
+      "id": "qwen3-8-27b-vllm",
+      "label": "Qwen3.8 27B (vLLM)",
+      "description": "Servido com vLLM em GPU, para vários utilizadores em simultâneo.",
+      "backend": "vllm-gpu",
+      "upstreamModel": "Qwen/Qwen3.8-27B",
+      "author": "Alibaba (Qwen)",
+      "license": "Apache-2.0",
+      "contextTokens": 32768,
+      "maxOutputTokens": 4096
+    },
+    {
+      "id": "gpt-externo",
+      "label": "Modelo externo (OpenAI)",
+      "description": "Integração opcional: só aparece se OPENAI_API_KEY estiver definida no servidor.",
+      "backend": "openai",
+      "upstreamModel": "MODELO_A_ESCOLHER",
+      "author": "OpenAI",
+      "license": null,
+      "contextTokens": 128000,
+      "maxOutputTokens": 4096
+    }
+  ]
+}

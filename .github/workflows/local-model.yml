@@ -1,0 +1,102 @@
+name: Modelo local (Ollama)
+
+# Instala o Ollama num runner sem GPU, descarrega um modelo pequeno com
+# licença Apache 2.0 (qwen3:0.6b) e valida a integração de ponta a ponta:
+# conversa pela API com PostgreSQL, cancelamento e a avaliação básica.
+# Valida a ligação ao modelo, não a qualidade (o modelo é mínimo).
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'server/providers/**'
+      - 'server/prompts/**'
+      - 'server/modules/chat.ts'
+      - 'config/models.ci.json'
+      - 'evals/**'
+      - 'scripts/eval.ts'
+      - 'tests/real-model/**'
+      - '.github/workflows/local-model.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  ollama:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash -o pipefail -e {0}
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: forja
+          POSTGRES_PASSWORD: forja-ci-only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U forja"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://forja:forja-ci-only@localhost:5432/postgres
+      OLLAMA_URL: http://127.0.0.1:11434
+      OLLAMA_MODEL: qwen3:0.6b
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
+      - name: Cache dos pesos do modelo
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama/models
+          key: ollama-${{ env.OLLAMA_MODEL }}
+
+      - name: Instalar e arrancar o Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          sudo systemctl stop ollama 2>/dev/null || true
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf "$OLLAMA_URL/api/tags" > /dev/null && break; sleep 1; done
+          ollama --version
+
+      - name: Descarregar o modelo
+        run: |
+          ollama pull "$OLLAMA_MODEL"
+          ollama list
+
+      - name: Conversa pela API com o modelo real
+        run: npm run test:real-model 2>&1 | tee "$RUNNER_TEMP/real.txt"
+
+      - name: Avaliação básica
+        run: |
+          npx tsx scripts/eval.ts --config config/models.ci.json --model qwen3-0-6b-ci \
+            --cases evals/basico.json --out "$RUNNER_TEMP/avaliacao.json" 2>&1 | tee "$RUNNER_TEMP/eval.txt"
+
+      - name: Resumo
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/real.txt" ]; then
+            echo "::notice title=modelo-real::$(grep -E '^# (tests|pass|fail|skipped)' "$RUNNER_TEMP/real.txt" | tr '\n' ' ' || true)"
+            echo "::notice title=resposta::$(grep -m1 '^Resposta' "$RUNNER_TEMP/real.txt" | cut -c1-300 || true)"
+            { grep -E '^not ok' "$RUNNER_TEMP/real.txt" || true; } | head -5 | while read -r l; do echo "::error title=modelo-real::$l"; done
+          fi
+          if [ -f "$RUNNER_TEMP/eval.txt" ]; then
+            echo "::notice title=avaliação::$(grep -E 'Aprovação' "$RUNNER_TEMP/eval.txt" || true)"
+            grep -E '^[✔✘]' "$RUNNER_TEMP/eval.txt" | while read -r l; do echo "::notice title=caso::$l"; done || true
+          fi
+          tail -20 "$RUNNER_TEMP/ollama.log" || true
+
+      - name: Relatório da avaliação
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: avaliacao-qwen3-0.6b
+          path: ${{ runner.temp }}/avaliacao.json
+          if-no-files-found: ignore

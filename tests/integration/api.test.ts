@@ -204,7 +204,7 @@ describe('conversas e streaming persistido', () => {
     assert.equal(stale.status, 409);
   });
 
-  test('ids repetidos e modelos por integrar são recusados', async () => {
+  test('ids repetidos e modelos desconhecidos são recusados', async () => {
     const c = await newUser();
     const id = await newConversation(c);
     const r = await send(c, id, 'olá');
@@ -212,10 +212,10 @@ describe('conversas e streaming persistido', () => {
       mode: 'send', model: 'forja-sim', userMessage: { id: r.userId, content: 'x', fileIds: [] }, assistantMessageId: randomUUID(),
     });
     assert.equal(dup.status, 409);
-    const pending = await c.json('POST', `/api/conversations/${id}/messages`, {
-      mode: 'send', model: 'anthropic', userMessage: { id: randomUUID(), content: 'x', fileIds: [] }, assistantMessageId: randomUUID(),
+    const unknown = await c.json('POST', `/api/conversations/${id}/messages`, {
+      mode: 'send', model: 'nao-existe', userMessage: { id: randomUUID(), content: 'x', fileIds: [] }, assistantMessageId: randomUUID(),
     });
-    assert.equal(pending.status, 409);
+    assert.equal(unknown.status, 422);
   });
 
   test('mudar o nome, pesquisa sem acentos, curingas literais e paginação', async () => {

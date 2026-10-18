@@ -94,7 +94,7 @@ test('configuração: falha cedo e regras de produção', () => {
   const base = { DATABASE_URL: 'postgres://u:p@h:5432/d' };
   assert.equal(loadConfig(base).cookieSecure, false);
   assert.throws(() => loadConfig({ ...base, NODE_ENV: 'production' }), /PUBLIC_ORIGIN/);
-  const prod = loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://forja.exemplo' });
+  const prod = loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://forja.exemplo', MODELS_CONFIG: 'config/models.json' });
   assert.equal(prod.cookieSecure, true);
-  assert.throws(() => loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://f.x', SCRYPT_LOG_N: '12' }), /SCRYPT/);
+  assert.throws(() => loadConfig({ ...base, NODE_ENV: 'production', PUBLIC_ORIGIN: 'https://f.x', MODELS_CONFIG: 'm.json', SCRYPT_LOG_N: '12' }), /SCRYPT/);
 });
