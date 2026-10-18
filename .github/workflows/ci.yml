@@ -31,6 +31,9 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+    defaults:
+      run:
+        shell: bash -o pipefail -e {0}
     env:
       TEST_DATABASE_URL: postgres://forja:forja-ci-only@localhost:5432/postgres
     steps:
@@ -58,10 +61,10 @@ jobs:
         run: npm run typecheck
 
       - name: Testes unitários
-        run: npm test
+        run: npm test 2>&1 | tee "$RUNNER_TEMP/unit.txt"
 
       - name: Testes de integração (PostgreSQL)
-        run: npm run test:integration
+        run: npm run test:integration 2>&1 | tee "$RUNNER_TEMP/integration.txt"
 
       - name: Instalar Chromium para E2E
         run: npx playwright install --with-deps chromium
@@ -71,7 +74,7 @@ jobs:
           E2E_SCREENSHOTS: ${{ runner.temp }}/screenshots
         run: |
           mkdir -p "$E2E_SCREENSHOTS"
-          npm run test:e2e
+          npm run test:e2e 2>&1 | tee "$RUNNER_TEMP/e2e.txt"
 
       - name: Capturas de ecrã dos E2E
         if: always()
@@ -83,4 +86,16 @@ jobs:
           if-no-files-found: ignore
 
       - name: Auditoria de dependências
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=high 2>&1 | tee "$RUNNER_TEMP/audit.txt"
+
+      # Resumo legível pela API (anotações), útil quando os logs completos não estão acessíveis.
+      - name: Resumo
+        if: always()
+        run: |
+          for f in unit integration e2e; do
+            [ -f "$RUNNER_TEMP/$f.txt" ] || continue
+            line=$(grep -E '^# (tests|pass|fail|skipped)' "$RUNNER_TEMP/$f.txt" | tr '\n' ' ')
+            echo "::notice title=$f::$line"
+            grep -E '^not ok' "$RUNNER_TEMP/$f.txt" | head -5 | while read -r l; do echo "::error title=$f::$l"; done
+          done
+          [ -f "$RUNNER_TEMP/audit.txt" ] && echo "::notice title=audit::$(tail -3 "$RUNNER_TEMP/audit.txt" | tr '\n' ' ')"
