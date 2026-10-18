@@ -165,13 +165,30 @@ export type StreamEvent =
   | { type: 'message.end'; data: { finishReason: FinishReason; usage: Usage } }
   | { type: 'error'; data: MessageErrorInfo };
 
-export type ModelStatus = 'available' | 'simulated' | 'requires-integration';
+/**
+ * Estado de um modelo:
+ * - available: servidor de modelos acessível e modelo presente;
+ * - offline: configurado, mas o servidor não responde ou o modelo não está descarregado;
+ * - simulated: fornecedor simulado, sem IA.
+ */
+export type ModelStatus = 'available' | 'offline' | 'simulated';
 
+/** Onde o modelo corre. `external` = API de terceiros (opcional, nunca obrigatória). */
+export type ModelHosting = 'simulated' | 'self-hosted' | 'external';
+
+/** O que o frontend pode saber sobre um modelo (nunca URLs internos nem chaves). */
 export interface ModelInfo {
   id: string;
   label: string;
   description: string;
   status: ModelStatus;
+  hosting: ModelHosting;
+  /** Autor dos pesos/serviço, ex.: "Alibaba (Qwen)". */
+  author: string | null;
+  /** Licença dos pesos, ex.: "Apache-2.0". */
+  license: string | null;
+  /** Explicação curta quando `offline`. */
+  statusDetail: string | null;
 }
 
 /** Mensagem normalizada enviada a um fornecedor de modelos. */

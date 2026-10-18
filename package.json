@@ -17,7 +17,9 @@
     "test": "node --import tsx --test \"tests/unit/**/*.test.ts\"",
     "test:integration": "node --import tsx --test tests/integration/*.test.ts",
     "test:e2e": "tsx scripts/build.ts && node --import tsx --test tests/e2e/*.e2e.ts",
-    "check": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e"
+    "check": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e",
+    "test:real-model": "node --import tsx --test tests/real-model/*.test.ts",
+    "eval": "tsx scripts/eval.ts"
   },
   "dependencies": {
     "dompurify": "^3.4.16",

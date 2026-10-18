@@ -27,9 +27,14 @@ const schema = z.object({
   SIGNUP_PER_IP_HOUR: z.coerce.number().int().min(1).default(10),
   LOGIN_PER_IP_MINUTE: z.coerce.number().int().min(1).default(20),
   MOCK_DELAY_MS: z.coerce.number().int().min(0).max(5000).default(14),
+  /** Ficheiro JSON com o catálogo de modelos (backends e modelos). Ver config/models.example.json. */
+  MODELS_CONFIG: z.string().optional(),
+  /** Expor o fornecedor simulado. Por defeito: ligado fora de produção, desligado em produção. */
+  ENABLE_SIMULATOR: bool.optional(),
+  MODEL_HEALTH_INTERVAL_MS: z.coerce.number().int().min(5_000).max(3_600_000).default(30_000),
 });
 
-export type Config = z.infer<typeof schema> & { cookieSecure: boolean };
+export type Config = z.infer<typeof schema> & { cookieSecure: boolean; simulatorEnabled: boolean };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const parsed = schema.safeParse(env);
@@ -43,5 +48,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     if (c.COOKIE_SECURE === false) throw new Error('COOKIE_SECURE=false não é permitido em produção.');
     if (c.SCRYPT_LOG_N < 17) throw new Error('SCRYPT_LOG_N deve ser ≥ 17 em produção.');
   }
-  return { ...c, cookieSecure: c.COOKIE_SECURE ?? c.NODE_ENV === 'production' };
+  const simulatorEnabled = c.ENABLE_SIMULATOR ?? c.NODE_ENV !== 'production';
+  if (c.NODE_ENV === 'production' && !c.MODELS_CONFIG && !simulatorEnabled) {
+    throw new Error('Em produção é necessário MODELS_CONFIG (catálogo de modelos).');
+  }
+  return { ...c, cookieSecure: c.COOKIE_SECURE ?? c.NODE_ENV === 'production', simulatorEnabled };
 }

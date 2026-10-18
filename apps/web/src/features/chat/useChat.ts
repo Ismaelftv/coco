@@ -113,7 +113,7 @@ export function useChat() {
 
   // ---- Modelo selecionado ----
   const usableModels = useMemo(
-    () => (models.status === 'ready' ? models.models.filter((m) => m.status !== 'requires-integration') : []),
+    () => (models.status === 'ready' ? models.models.filter((m) => m.status !== 'offline') : []),
     [models],
   );
   const active = state.activeId ? state.conversations[state.activeId] ?? null : null;

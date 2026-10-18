@@ -1,0 +1,17 @@
+{
+  "backends": [{ "id": "ollama-ci", "kind": "ollama", "baseUrl": "http://127.0.0.1:11434", "hosting": "self-hosted" }],
+  "models": [
+    {
+      "id": "qwen3-0-6b-ci",
+      "label": "Qwen3 0.6B",
+      "description": "Modelo mínimo para validar a integração na CI (não para qualidade).",
+      "backend": "ollama-ci",
+      "upstreamModel": "qwen3:0.6b",
+      "author": "Alibaba (Qwen)",
+      "license": "Apache-2.0",
+      "contextTokens": 4096,
+      "maxOutputTokens": 256,
+      "temperature": 0
+    }
+  ]
+}

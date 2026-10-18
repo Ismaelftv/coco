@@ -27,6 +27,8 @@ interface Props {
   onSend(text: string, files: FileInfo[]): boolean;
   onStop(): void;
   autoFocusKey: string;
+  /** Quem gera as respostas (mostrado por baixo da caixa de texto). */
+  modelNote: string;
 }
 
 const MAX_HEIGHT_RATIO = 0.4;
@@ -237,7 +239,7 @@ export function Composer(props: Props) {
         {dragging ? <div className="composer__drop">Larga os ficheiros aqui</div> : null}
       </div>
       <p id="composer-hint" className="composer-hint">
-        Enter envia · Shift+Enter nova linha · Fornecedor simulado: as respostas não vêm de um modelo de IA.
+        Enter envia · Shift+Enter nova linha · {props.modelNote}
       </p>
     </div>
   );

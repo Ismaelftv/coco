@@ -1,6 +1,8 @@
 # Forja
 
-Plataforma de assistente de IA. **Estado atual: Fase 3 concluída.** Contas de utilizador, histórico e ficheiros persistidos em PostgreSQL, API com streaming gravado no servidor. As respostas continuam a vir de um **fornecedor de modelos simulado** — ainda não há modelo de IA ligado (Fase 4).
+Plataforma de assistente de IA. **Estado atual: Fase 4.** Contas, histórico e ficheiros em PostgreSQL. A plataforma executa **modelos de pesos abertos na nossa própria infraestrutura**: Ollama para desenvolvimento, vLLM para escala. A troca de modelo faz-se por configuração, e as APIs comerciais são opcionais.
+
+> Os modelos usados (ex.: Qwen3, da Alibaba, Apache 2.0) são de terceiros e não foram adaptados por nós. Ver o que é próprio e o que não é em [`docs/06-modelos.md`](docs/06-modelos.md).
 
 ## Começar
 
@@ -14,15 +16,25 @@ npm run build
 npm start              # http://127.0.0.1:5173 — as migrações correm no arranque
 ```
 
+Sem `MODELS_CONFIG`, só o fornecedor simulado está disponível. Para usar um modelo local:
+
+```bash
+ollama pull qwen3:4b
+cp config/models.example.json config/models.json
+echo "MODELS_CONFIG=config/models.json" >> .env
+```
+
 Todas as variáveis de ambiente estão documentadas em [`.env.example`](.env.example) e são validadas no arranque; em produção são obrigatórias `PUBLIC_ORIGIN`, cookies `Secure` e `SCRYPT_LOG_N ≥ 17`.
 
 ## Verificar
 
 ```bash
 npm run typecheck          # TypeScript estrito
-npm test                   # 33 testes unitários
-npm run test:integration   # 29 testes contra PostgreSQL real (API, isolamento, cliente DB)
-npm run test:e2e           # 12 testes no Chromium contra a aplicação completa
+npm test                   # unitários
+npm run test:integration   # PostgreSQL real e servidor de modelos falso
+npm run test:e2e           # E2E no Chromium contra a aplicação completa
+npm run test:real-model    # com um Ollama real (OLLAMA_URL); corre na CI
+npm run eval -- --config config/models.json --model qwen3-4b-local   # avaliação de um modelo
 npm run check              # tudo
 ```
 
@@ -35,3 +47,4 @@ Os testes de integração e E2E criam e apagam uma base de dados própria em `TE
 - [`docs/03-frontend.md`](docs/03-frontend.md) — estado real de cada funcionalidade, design system
 - [`docs/04-pendentes.md`](docs/04-pendentes.md) — limitações conhecidas e próximos passos
 - [`docs/05-api.md`](docs/05-api.md) — API, modelo de dados, segurança, ADR 0008–0011
+- [`docs/06-modelos.md`](docs/06-modelos.md) — modelos locais, catálogo, hardware, avaliação, ADR 0012–0013

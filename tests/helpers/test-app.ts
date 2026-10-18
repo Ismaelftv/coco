@@ -6,10 +6,13 @@ import type { AddressInfo } from 'node:net';
 import { createApp } from '../../server/app.ts';
 import { loadConfig } from '../../server/config.ts';
 import { createMockProvider } from '../../server/providers/mock.ts';
+import type { ModelProvider } from '../../server/providers/types.ts';
 import { createLocalStorage } from '../../server/storage/storage.ts';
 import { createTestDatabase } from './test-db.ts';
 
-export async function startTestApp(opts: { staticDir?: string; delayMs?: number; env?: Record<string, string> } = {}) {
+export async function startTestApp(
+  opts: { staticDir?: string; delayMs?: number; env?: Record<string, string>; provider?: ModelProvider } = {},
+) {
   const database = await createTestDatabase();
   const storageDir = await mkdtemp(join(tmpdir(), 'forja-files-'));
   const config = loadConfig({
@@ -27,7 +30,7 @@ export async function startTestApp(opts: { staticDir?: string; delayMs?: number;
   const app = createApp({
     config,
     db: database.db,
-    provider: createMockProvider({ delayMs: opts.delayMs ?? 0 }),
+    provider: opts.provider ?? createMockProvider({ delayMs: opts.delayMs ?? 0 }),
     storage,
     staticDir: opts.staticDir ?? storageDir,
     log: (l) => logs.push(l),

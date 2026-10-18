@@ -73,7 +73,7 @@ interface ModelProvider {
 }
 ```
 
-Implementações previstas: `mock` (existe), `anthropic`, `openai`, `openai-compatible` (cobre vLLM, SGLang, llama.cpp `llama-server` e Ollama, que expõem APIs compatíveis). A última é a ponte para as Etapas B e D sem alterar o resto do sistema.
+**Implementado (Fase 4):** registo de modelos configurável com backends `ollama` (API nativa) e `openai-compatible` (vLLM, llama.cpp, SGLang, APIs comerciais opcionais), mais o simulador. Ver `06-modelos.md`.
 
 ## 6. Decisões arquiteturais (ADR)
 
@@ -128,7 +128,7 @@ Primeiro cenário a calcular, quando houver dados: 1 000 utilizadores ativos/dia
 | 1 | Investigação e arquitetura | Este documento revisto pela equipa. |
 | 2 | Frontend da conversação — **concluída** | Fluxos críticos com testes E2E a passar. |
 | 3 | API, autenticação, Postgres, histórico e ficheiros — **concluída** | Conversas persistidas por utilizador; testes de autorização. |
-| 4 | Fornecedores reais, gestão de contexto, contabilização de tokens, avaliações | Conjunto de avaliação com ≥ 100 casos; custo por pedido visível. |
+| 4 | Modelos locais (Ollama/vLLM), registo por configuração, contexto por modelo, tokens reais, avaliação — **em curso** | Feito: execução local e avaliação básica. Falta: conjunto de avaliação com ≥ 100 casos e custo por pedido. |
 | 5 | Projetos, sandbox, ciclo de agente para programação | Agente cria uma alteração, corre testes na sandbox e prepara revisão humana. |
 | 6 | Laboratório de segurança autorizado | Verificação de propriedade, escopo, auditoria. |
 | 7 | Observabilidade, desempenho, custos | SLOs definidos e medidos. |

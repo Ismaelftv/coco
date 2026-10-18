@@ -17,7 +17,8 @@ import {
   type Usage,
 } from '../../shared/contract.ts';
 import { deriveTitle } from '../../shared/text.ts';
-import { trimHistory } from '../context.ts';
+import { estimateTokens, trimHistory } from '../context.ts';
+import { buildSystemPrompt } from '../prompts/system.ts';
 import { PgError, type Db } from '../db/db.ts';
 import { HttpError, readJson, uuidParam, type Router } from '../http/http.ts';
 import type { ModelProvider } from '../providers/types.ts';
@@ -30,6 +31,7 @@ import { getOwnedConversation, loadMessages, uuidArray } from './conversations.t
 const FLUSH_MS = 1500;
 
 export interface ChatOptions {
+  /** Teto do orçamento de contexto; o limite efetivo depende do modelo. */
   contextBudgetTokens?: number;
   chatPerMinute?: number;
   log: (l: string) => void;
@@ -43,13 +45,13 @@ export function registerChat(
   options: ChatOptions,
 ) {
   const { log } = options;
-  const budget = options.contextBudgetTokens ?? 24_000;
+  const budgetCap = options.contextBudgetTokens ?? 128_000;
   const perMinute = options.chatPerMinute ?? 30;
   const limiter = createRateLimiter(perMinute, perMinute / 60);
   const active = new Map<AbortController, Promise<void>>();
 
   /** Histórico para o modelo, com o texto dos anexos lido do armazenamento. */
-  async function buildHistory(userId: string, conversationId: string, exclude: string): Promise<ChatMessage[]> {
+  async function buildHistory(userId: string, conversationId: string, exclude: string, budget: number): Promise<ChatMessage[]> {
     const messages = await loadMessages(db, userId, conversationId);
     const out: ChatMessage[] = [];
     for (const m of messages) {
@@ -89,8 +91,13 @@ export function registerChat(
       const body = await readJson(req, sendMessageSchema, LIMITS.jsonBodyBytes);
       const model = provider.models.find((m) => m.id === body.model);
       if (!model) throw new HttpError(422, 'unknown_model', 'Modelo desconhecido.');
-      if (model.status === 'requires-integration') {
-        throw new HttpError(409, 'model_unavailable', `${model.label} ainda não está integrado.`);
+      if (model.status === 'offline') {
+        // O estado pode estar desatualizado: verificar de novo antes de recusar.
+        await provider.refresh?.();
+        const fresh = provider.models.find((m) => m.id === body.model);
+        if (fresh?.status === 'offline') {
+          throw new HttpError(409, 'model_unavailable', `${model.label} está indisponível: ${fresh.statusDetail ?? 'servidor de modelos inacessível.'}`);
+        }
       }
       if (body.mode === 'send' && !body.userMessage.content.trim() && body.userMessage.fileIds.length === 0) {
         throw new HttpError(422, 'empty_message', 'Mensagem vazia.');
@@ -163,9 +170,17 @@ export function registerChat(
         throw e;
       }
 
-      const history = await buildHistory(u.id, conversationId, assistantId);
+      // Orçamento: janela do modelo − resposta máxima − prompt de sistema, com margem
+      // de 10% porque a contagem é estimada (≈4 caracteres por token).
+      const limits = provider.limits?.(model.id) ?? { contextTokens: 32_000, maxOutputTokens: 4_096 };
+      const system = model.hosting === 'simulated' ? undefined : buildSystemPrompt(model);
+      const budget = Math.max(
+        1_000,
+        Math.min(budgetCap, Math.floor((limits.contextTokens - limits.maxOutputTokens) * 0.9) - estimateTokens(system ?? '')),
+      );
+      const history = await buildHistory(u.id, conversationId, assistantId, budget);
       const controller = new AbortController();
-      const done = stream(res, { assistantId, conversationId, modelId: model.id, history }, controller);
+      const done = stream(res, { assistantId, conversationId, modelId: model.id, history, ...(system ? { system } : {}) }, controller);
       active.set(controller, done);
       try {
         await done;
@@ -178,7 +193,7 @@ export function registerChat(
 
   async function stream(
     res: ServerResponse,
-    job: { assistantId: string; conversationId: string; modelId: string; history: ChatMessage[] },
+    job: { assistantId: string; conversationId: string; modelId: string; history: ChatMessage[]; system?: string },
     controller: AbortController,
   ): Promise<void> {
     res.on('close', () => controller.abort());
@@ -207,8 +222,12 @@ export function registerChat(
 
     const started = Date.now();
     try {
-      for await (const ev of provider.stream({ model: job.modelId, messages: job.history }, controller.signal)) {
-        if (ev.type === 'delta') {
+      const request = { model: job.modelId, messages: job.history, ...(job.system ? { system: job.system } : {}) };
+      for await (const ev of provider.stream(request, controller.signal)) {
+        if (ev.type === 'reasoning') {
+          // O raciocínio interno não é mostrado nem guardado nesta fase.
+          continue;
+        } else if (ev.type === 'delta') {
           content += ev.text;
           send({ type: 'delta', data: { text: ev.text } });
         } else if (ev.type === 'end') {

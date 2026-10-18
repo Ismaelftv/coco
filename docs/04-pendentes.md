@@ -21,9 +21,19 @@ Resolvido com a CI no GitHub Actions: driver `pg` oficial, `@types/react`, `pack
 7. **Pesquisa** com `ILIKE` + trigramas: adequada até dezenas de milhares de mensagens por utilizador; pesquisa semântica com pgvector na Fase 4.
 8. **Sessões**: sem lista de dispositivos nem "terminar todas as sessões" na interface (a tabela já o permite).
 
+## Fase 4 — por fazer
+
+1. **Imagens e PDF para modelos multimodais**: o catálogo ainda não declara capacidades de visão; hoje os anexos não textuais são assinalados ao modelo como "não incluídos".
+2. **Raciocínio ("thinking")**: é filtrado e descartado. Falta decidir se se mostra ao utilizador (recolhido) e se se guarda.
+3. **Contagem de tokens antes de enviar**: o corte do histórico usa uma estimativa (≈4 caracteres/token) com 10 % de margem; o valor real só se conhece na resposta.
+4. **Conjunto de avaliação**: 6 casos; precisa de crescer com casos reais do produto (≥ 100) antes de decisões de troca de modelo.
+5. **Ferramentas e agentes**: os adaptadores ainda não transmitem chamadas de ferramentas (`tools`); é o passo seguinte para agentes próprios.
+6. **Integração nativa da Anthropic** (formato próprio, não compatível com OpenAI): não implementada; opcional.
+7. **Custos e quotas por utilizador** (tokens por dia) e limites de concorrência por servidor de modelos.
+
 ## Próximas fases
 
-1. **Fase 4:** fornecedores reais por trás de `ModelProvider` (Anthropic, OpenAI, compatível com OpenAI), multimodal, tokenizador real, contabilização de custos por utilizador, conjunto de avaliação, pgvector.
+1. Especialização (Etapa C): dados próprios, LoRA sobre um modelo de pesos abertos, avaliação comparativa — o primeiro passo para capacidades próprias.
 2. Auditoria de acessibilidade com axe-core nos E2E; testes com leitores de ecrã.
 3. Carregamento diferido do highlight.js (bundle atual: 389 KB minificado).
 4. CI: typecheck, testes unitários, integração (com PostgreSQL de serviço), E2E, auditoria de dependências, ações fixadas por SHA.

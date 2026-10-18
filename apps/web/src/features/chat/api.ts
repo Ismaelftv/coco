@@ -4,7 +4,7 @@
  */
 import type { FinishReason, StreamEvent, Usage } from '../../../../../shared/contract.ts';
 import { apiFetch, errorFrom } from '../../lib/api.ts';
-import { createSseParser } from '../../lib/sse.ts';
+import { createSseParser } from '../../../../../shared/sse.ts';
 
 export interface StreamHandlers {
   onStart?(data: { id: string; model: string }): void;

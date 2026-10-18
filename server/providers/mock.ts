@@ -20,20 +20,12 @@ const MODELS: readonly ModelInfo[] = [
   {
     id: 'forja-sim',
     label: 'Forja Simulador',
-    description: 'Respostas determinísticas para desenvolvimento. Não é um modelo de IA.',
+    description: 'Respostas determinísticas para desenvolvimento e testes. Não é um modelo de IA.',
     status: 'simulated',
-  },
-  {
-    id: 'anthropic',
-    label: 'Claude (API Anthropic)',
-    description: 'Requer integração no backend (Fase 4).',
-    status: 'requires-integration',
-  },
-  {
-    id: 'openai-compatible',
-    label: 'Modelo auto-alojado',
-    description: 'vLLM, SGLang, llama.cpp ou Ollama via API compatível (Fase 8).',
-    status: 'requires-integration',
+    hosting: 'simulated',
+    author: null,
+    license: null,
+    statusDetail: null,
   },
 ];
 

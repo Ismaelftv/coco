@@ -11,11 +11,14 @@ interface Props {
   onRetry(): void;
 }
 
-const STATUS_LABEL: Record<ModelInfo['status'], string> = {
-  available: 'Disponível',
-  simulated: 'Simulado',
-  'requires-integration': 'Requer integração',
-};
+/** Etiqueta curta: onde corre o modelo, ou porque não está disponível. */
+export function modelBadge(m: ModelInfo): { label: string; tone: string } {
+  if (m.status === 'offline') return { label: 'Indisponível', tone: 'offline' };
+  if (m.status === 'simulated') return { label: 'Simulado', tone: 'simulated' };
+  return m.hosting === 'external' ? { label: 'Externo', tone: 'external' } : { label: 'Local', tone: 'local' };
+}
+
+const unusable = (m: ModelInfo) => m.status === 'offline';
 
 /** Listbox acessível (padrão WAI-ARIA "select-only combobox" simplificado). */
 export function ModelPicker({ models, selected, disabled, onSelect, onRetry }: Props) {
@@ -64,7 +67,7 @@ export function ModelPicker({ models, selected, disabled, onSelect, onRetry }: P
   };
 
   const choose = (m: ModelInfo | undefined) => {
-    if (!m || m.status === 'requires-integration') return;
+    if (!m || unusable(m)) return;
     onSelect(m.id);
     setOpen(false);
     buttonRef.current?.focus();
@@ -113,9 +116,7 @@ export function ModelPicker({ models, selected, disabled, onSelect, onRetry }: P
         }}
       >
         <span className="model-picker__label">{current?.label ?? 'Escolher modelo'}</span>
-        {current && current.status !== 'available' ? (
-          <span className={`badge badge--${current.status}`}>{STATUS_LABEL[current.status]}</span>
-        ) : null}
+        {current ? <span className={`badge badge--${modelBadge(current).tone}`}>{modelBadge(current).label}</span> : null}
         <Icon name="chevronDown" size={14} />
       </button>
       {open ? (
@@ -130,7 +131,9 @@ export function ModelPicker({ models, selected, disabled, onSelect, onRetry }: P
           onKeyDown={onListKey}
         >
           {list.map((m, i) => {
-            const unavailable = m.status === 'requires-integration';
+            const unavailable = unusable(m);
+            const badge = modelBadge(m);
+            const meta = [m.author, m.license && `Licença ${m.license}`].filter(Boolean).join(' · ');
             return (
               <li
                 key={m.id}
@@ -144,10 +147,12 @@ export function ModelPicker({ models, selected, disabled, onSelect, onRetry }: P
               >
                 <span className="model-option__head">
                   <span className="model-option__name">{m.label}</span>
-                  <span className={`badge badge--${m.status}`}>{STATUS_LABEL[m.status]}</span>
+                  <span className={`badge badge--${badge.tone}`}>{badge.label}</span>
                   {m.id === selected ? <Icon name="check" size={16} className="model-option__check" /> : null}
                 </span>
-                <span className="model-option__desc">{m.description}</span>
+                {m.description ? <span className="model-option__desc">{m.description}</span> : null}
+                {meta ? <span className="model-option__desc">{meta}</span> : null}
+                {unavailable && m.statusDetail ? <span className="model-option__desc model-option__desc--warn">{m.statusDetail}</span> : null}
               </li>
             );
           })}

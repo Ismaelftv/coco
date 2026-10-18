@@ -162,12 +162,13 @@
   color: var(--color-ember);
 }
 
+.badge--local,
 .badge--available {
   background: var(--color-accent-soft);
   color: var(--color-accent-strong);
 }
 
-.badge--requires-integration,
+.badge--offline,
 .badge--pending {
   background: var(--color-hover);
   color: var(--color-text-muted);
@@ -1406,4 +1407,13 @@
 
 .file-chip--uploading .file-chip__meta {
   color: var(--color-accent-strong);
+}
+
+.badge--external {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.model-option__desc--warn {
+  color: var(--color-ember);
 }
