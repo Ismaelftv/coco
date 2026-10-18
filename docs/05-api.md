@@ -49,7 +49,7 @@ Um recurso de outro utilizador devolve **404**, exatamente como um inexistente.
 
 ## 4. Decisões (continuação dos ADR de `02-arquitetura.md`)
 
-**ADR-0008 — Cliente PostgreSQL próprio, temporário.** O `pg` não pôde ser instalado (registo npm inacessível). O cliente em `server/db/pg-wire.ts` implementa só o necessário: protocolo estendido com parâmetros separados do SQL (sem via de interpolação), SCRAM-SHA-256 com verificação da assinatura do servidor, TLS, `statement_timeout`. Está isolado atrás de `server/db/db.ts`; trocar por `pg.Pool` é uma alteração de um ficheiro. Testado contra PostgreSQL 16.15 (incluindo TLS e palavra-passe errada).
+**ADR-0008 — Driver `pg` (node-postgres).** Na Fase 3 usou-se um cliente próprio temporário, porque o registo npm estava inacessível no ambiente de desenvolvimento. Foi substituído pelo `pg` assim que a CI no GitHub permitiu instalar e testar dependências; a interface `server/db/db.ts` manteve-se, por isso nenhum módulo mudou. Decisões explícitas: `sslmode` interpretado no código (`require` cifra; `verify-full` valida certificado e nome), `int8` devolvido como número quando seguro, parâmetros JSON sempre serializados como texto JSON, `statement_timeout` e fuso UTC por sessão.
 
 **ADR-0009 — Sessões opacas em cookie, não JWT.** Revogação imediata (logout, "sair de todos os dispositivos" no futuro), token nunca acessível ao JavaScript (`HttpOnly`), `SameSite=Lax`, `Secure` e prefixo `__Host-` em produção. Só o hash do token é guardado. CSRF: verificação de `Origin` em todos os pedidos que alteram estado.
 

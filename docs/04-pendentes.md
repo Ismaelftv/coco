@@ -1,13 +1,11 @@
 # Pendentes e limitações conhecidas
 
-## Causadas pelo ambiente de desenvolvimento (registos npm/PyPI e GitHub inacessíveis)
+## Causadas pelo ambiente de desenvolvimento
+
+Resolvido com a CI no GitHub Actions: driver `pg` oficial, `@types/react`, `package-lock.json` e `npm audit` (sem vulnerabilidades altas ou críticas). Restam:
 
 | Item | Ação quando houver rede | Prioridade |
 |---|---|---|
-| **Cliente PostgreSQL próprio** (`server/db/pg-wire.ts`) em vez de `pg` | `npm i pg @types/pg`, reescrever `server/db/db.ts` sobre `pg.Pool`, apagar `pg-wire.ts`, correr `npm run test:integration`. | **Alta — antes de produção** |
-| `@types/react` / `@types/react-dom` substituídos por `react-shim.d.ts` | `npm i -D @types/react @types/react-dom`, apagar o shim, `npm run typecheck`. | Alta |
-| Sem `package-lock.json` | `npm install` para gerar o lockfile com as versões fixadas. | Alta |
-| `npm audit` não executado | Executar e adicionar ao CI. | Alta |
 | scrypt em vez de argon2id | Opcional: argon2id quando houver pacote; o formato do hash já permite migração no login. | Baixa |
 | `docker-compose.yml` não executado (sem daemon Docker) | Validar localmente; o cluster de `scripts/pg-local.sh` foi o usado nos testes. | Média |
 | Licenças de vLLM, llama.cpp, Ollama, pgvector, LangGraph, Langfuse, gVisor, Firecracker [C] | Confirmar o `LICENSE` de cada repositório. | Antes da Fase 8 |

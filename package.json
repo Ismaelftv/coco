@@ -20,15 +20,19 @@
     "check": "npm run typecheck && npm test && npm run test:integration && npm run test:e2e"
   },
   "dependencies": {
-    "dompurify": "3.4.14",
+    "dompurify": "^3.4.16",
     "highlight.js": "11.12.0",
     "marked": "18.0.10",
+    "pg": "^8.16.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "zod": "3.25.76"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.15.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
     "esbuild": "0.28.2",
     "playwright": "1.56.0",
     "tsx": "4.23.12",
