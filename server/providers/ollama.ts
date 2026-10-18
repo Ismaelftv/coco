@@ -10,7 +10,7 @@
  */
 import type { FinishReason, Usage } from '../../shared/contract.ts';
 import { estimateTokens } from '../context.ts';
-import { classifyHttp, toApiMessages } from './openai-compatible.ts';
+import { classifyHttp, parseToolArguments, toApiMessages, toolsToApi } from './openai-compatible.ts';
 import { createThinkFilter } from './think-filter.ts';
 import type { BackendRequest, ModelBackend, ProviderEvent } from './types.ts';
 
@@ -27,7 +27,7 @@ export interface OllamaOptions {
 }
 
 interface ChatLine {
-  message?: { content?: string; thinking?: string };
+  message?: { content?: string; thinking?: string; tool_calls?: { function?: { name?: string; arguments?: unknown } }[] };
   done?: boolean;
   done_reason?: string;
   prompt_eval_count?: number;
@@ -57,7 +57,7 @@ export function createOllamaBackend(options: OllamaOptions): ModelBackend {
     },
 
     async *stream(request: BackendRequest, signal: AbortSignal): AsyncIterable<ProviderEvent> {
-      const messages = toApiMessages(request.system, request.messages);
+      const messages = toApiMessages(request.system, request.messages, 'ollama');
       const estimatedInput = messages.reduce((n, m) => n + estimateTokens(m.content) + 4, 0);
       const timer = new AbortController();
       let timedOutFlag = false;
@@ -77,6 +77,7 @@ export function createOllamaBackend(options: OllamaOptions): ModelBackend {
       let finish: FinishReason = 'stop';
       let usage: Usage | null = null;
       const think = createThinkFilter();
+      let callCount = 0;
 
       const cancelled = (): ProviderEvent => ({
         type: 'end',
@@ -94,6 +95,7 @@ export function createOllamaBackend(options: OllamaOptions): ModelBackend {
             model: request.upstreamModel,
             messages,
             stream: true,
+            ...toolsToApi(request.tools),
             ...(withThink ? { think: request.think } : {}),
             options: {
               num_ctx: request.contextTokens,
@@ -162,6 +164,13 @@ export function createOllamaBackend(options: OllamaOptions): ModelBackend {
               return yield { type: 'error', code: 'model_error', message: 'O servidor de modelos falhou durante a resposta.', retryable: true };
             }
             if (json.message?.thinking) yield { type: 'reasoning', text: json.message.thinking };
+            for (const tc of json.message?.tool_calls ?? []) {
+              // O Ollama envia cada chamada completa, com os argumentos já em objeto.
+              yield {
+                type: 'tool_call',
+                call: { id: `call_${callCount++}`, name: tc.function?.name ?? '', arguments: parseToolArguments(tc.function?.arguments) },
+              };
+            }
             if (json.message?.content) {
               const split = think.push(json.message.content);
               if (split.reasoning) yield { type: 'reasoning', text: split.reasoning };

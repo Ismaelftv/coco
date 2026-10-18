@@ -14,6 +14,8 @@ on:
       - 'config/models.ci.json'
       - 'evals/**'
       - 'scripts/eval.ts'
+      - 'server/agent/**'
+      - 'scripts/agent*.ts'
       - 'tests/real-model/**'
       - '.github/workflows/local-model.yml'
 
@@ -99,4 +101,56 @@ jobs:
         with:
           name: avaliacao-qwen3-0.6b
           path: ${{ runner.temp }}/avaliacao.json
+          if-no-files-found: ignore
+
+  agentes:
+    # Avaliação dos agentes de programação com modelos locais reais, nos dois
+    # modos de ferramentas. Mede execução técnica de tarefas pequenas (critérios
+    # verificados pelo sistema); não mede a qualidade geral do modelo.
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    continue-on-error: true   # métricas informativas: modelos mínimos falham tarefas
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [qwen3-0-6b-ci, qwen3-1-7b-ci]
+        mode: [native, prompted]
+    defaults:
+      run:
+        shell: bash -o pipefail -e {0}
+    env:
+      OLLAMA_URL: http://127.0.0.1:11434
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Cache dos pesos
+        uses: actions/cache@v4
+        with:
+          path: ~/.ollama/models
+          key: ollama-agentes-qwen3-0.6b-1.7b
+      - name: Instalar e arrancar o Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          sudo systemctl stop ollama 2>/dev/null || true
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf "$OLLAMA_URL/api/tags" > /dev/null && break; sleep 1; done
+          ollama pull qwen3:0.6b
+          ollama pull qwen3:1.7b
+      - name: Avaliação de agentes
+        run: |
+          npx tsx scripts/agent-eval.ts --config config/models.ci.json --model "${{ matrix.model }}" \
+            --mode "${{ matrix.mode }}" --repeat 2 --max-iterations 15 \
+            --out "$RUNNER_TEMP/agentes.json" 2>&1 | tee "$RUNNER_TEMP/agentes.txt" || true
+      - name: Resumo
+        if: always()
+        run: |
+          grep -E '^(Modelo|Isolamento|Tarefas)|^[✔✘!]' "$RUNNER_TEMP/agentes.txt" | while read -r l; do echo "::notice title=agentes ${{ matrix.model }} ${{ matrix.mode }}::$l"; done || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: agentes-${{ matrix.model }}-${{ matrix.mode }}
+          path: ${{ runner.temp }}/agentes.json
           if-no-files-found: ignore

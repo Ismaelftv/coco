@@ -9,6 +9,8 @@
  *   #erro-stream  falha a meio da resposta
  *   #pensar       inclui raciocínio (campo próprio e etiquetas <think>)
  *   #longo        termina por limite de tokens (finish_reason "length")
+ *   #ferramenta   (em qualquer mensagem) se o pedido trouxer `tools`, devolve uma chamada à primeira
+ *                 ferramenta com {"path":"src/a.js"} (OpenAI: argumentos fragmentados)
  */
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -84,6 +86,25 @@ export async function startFakeModelServer(opts: { models?: string[]; port?: num
     const thinking = prompt.includes('#pensar');
     const failAt = prompt.includes('#erro-stream') ? 2 : -1;
     const finish = prompt.includes('#longo') ? 'length' : 'stop';
+
+    const tools = body.tools as { function: { name: string } }[] | undefined;
+    if (JSON.stringify(body.messages ?? []).includes('#ferramenta') && tools?.length) {
+      const name = tools[0]!.function.name;
+      if (isOllama) {
+        res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });
+        res.write(`${JSON.stringify({ message: { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: { path: 'src/a.js' } } }] }, done: false })}\n`);
+        res.write(`${JSON.stringify({ message: { role: 'assistant', content: '' }, done: true, done_reason: 'stop', prompt_eval_count: 30, eval_count: 5 })}\n`);
+        return res.end();
+      }
+      res.writeHead(200, { 'Content-Type': 'text/event-stream' });
+      const sse = (o: unknown) => res.write(`data: ${JSON.stringify(o)}\n\n`);
+      sse({ choices: [{ delta: { role: 'assistant', tool_calls: [{ index: 0, id: 'call_abc', type: 'function', function: { name, arguments: '' } }] } }] });
+      sse({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"pa' } }] } }] });
+      sse({ choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: 'th":"src/a.js"}' } }] } }] });
+      sse({ choices: [{ delta: {}, finish_reason: 'tool_calls' }] });
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
 
     if (isOllama) {
       res.writeHead(200, { 'Content-Type': 'application/x-ndjson' });

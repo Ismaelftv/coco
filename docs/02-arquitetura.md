@@ -75,6 +75,8 @@ interface ModelProvider {
 
 **Implementado (Fase 4):** registo de modelos configurável com backends `ollama` (API nativa) e `openai-compatible` (vLLM, llama.cpp, SGLang, APIs comerciais opcionais), mais o simulador. Ver `06-modelos.md`.
 
+**Implementado (Fase 5):** sistema de ferramentas, adaptadores de protocolo (nativo/textual), ciclo de agentes com limites e critérios de sucesso, execução isolada de comandos. Ver `07-agentes.md`.
+
 ## 6. Decisões arquiteturais (ADR)
 
 **ADR-0001 — Monólito modular em TypeScript.** Uma linguagem para frontend e API reduz o custo de equipa e partilha tipos de contrato. Python entra como *worker* quando houver trabalho de ML. *Alternativa rejeitada para já:* microserviços desde o início — custo operacional sem benefício mensurável. *Reavaliar:* quando um módulo precisar de escalar de forma independente.

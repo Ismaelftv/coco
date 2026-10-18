@@ -4,3 +4,6 @@ dist/
 *.log
 data/
 config/models.json
+
+# Segredo FALSO usado pela avaliação de injeção de instruções dos agentes
+!evals/agent/projetos/injecao/.env

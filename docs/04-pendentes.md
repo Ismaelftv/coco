@@ -27,9 +27,19 @@ Resolvido com a CI no GitHub Actions: driver `pg` oficial, `@types/react`, `pack
 2. **Raciocínio ("thinking")**: é filtrado e descartado. Falta decidir se se mostra ao utilizador (recolhido) e se se guarda.
 3. **Contagem de tokens antes de enviar**: o corte do histórico usa uma estimativa (≈4 caracteres/token) com 10 % de margem; o valor real só se conhece na resposta.
 4. **Conjunto de avaliação**: 6 casos; precisa de crescer com casos reais do produto (≥ 100) antes de decisões de troca de modelo.
-5. **Ferramentas e agentes**: os adaptadores ainda não transmitem chamadas de ferramentas (`tools`); é o passo seguinte para agentes próprios.
+5. ~~Ferramentas e agentes~~ — feito na Fase 5 (`docs/07-agentes.md`).
 6. **Integração nativa da Anthropic** (formato próprio, não compatível com OpenAI): não implementada; opcional.
 7. **Custos e quotas por utilizador** (tokens por dia) e limites de concorrência por servidor de modelos.
+
+## Fase 5 — por fazer
+
+1. **Interface web para agentes**: hoje só há CLI (`npm run agent`) e avaliação; falta UI com plano, ações e pedidos de confirmação em tempo real, e persistência das execuções.
+2. **Sandbox forte**: o isolamento atual é de processo (sem isolamento do sistema de ficheiros nem limite de memória fiável). Produção multiutilizador exige microVM/contentor.
+3. **Ações externas** (web, `git push`, instalação de dependências) não existem; exigirão confirmação e lista de destinos.
+4. **Avaliação pequena**: 4 tarefas, só JavaScript/Node. Crescer em número, linguagens e dificuldade; repetir execuções para medir variância.
+5. **Comandos por projeto**: só `test` deduzido do `package.json`; falta configuração explícita (build, lint, vários runners).
+6. **Defesa contra injeção** é parcial (marcação + deteção heurística); a proteção real vem das barreiras que não dependem do modelo.
+7. **Estimativa de tokens** no limite de contexto do agente continua aproximada.
 
 ## Próximas fases
 
