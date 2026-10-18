@@ -1,7 +1,7 @@
 name: Atualizar package-lock.json
 
-# Gera o package-lock.json num ambiente com acesso ao registo npm e envia-o
-# para o ramo `chore/lockfile`, para ser revisto e integrado.
+# Gera o package-lock.json num ambiente com acesso ao registo npm.
+# Executado em main → envia para o ramo `chore/lockfile`; noutro ramo → commit nesse ramo.
 on:
   workflow_dispatch:
 
@@ -19,11 +19,12 @@ jobs:
           node-version: 22
       - name: Gerar lockfile
         run: npm install --package-lock-only --no-audit --no-fund
-      - name: Enviar para chore/lockfile
+      - name: Enviar
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B chore/lockfile
+          target="$GITHUB_REF_NAME"
+          if [ "$target" = "main" ]; then target=chore/lockfile; git checkout -B "$target"; fi
           git add package-lock.json
-          git commit -m "Gerar package-lock.json" || { echo "Sem alterações"; exit 0; }
-          git push -f origin chore/lockfile
+          git commit -m "Atualizar package-lock.json" || { echo "Sem alterações"; exit 0; }
+          git push origin "HEAD:$target" ${{ github.ref_name == 'main' && '-f' || '' }}

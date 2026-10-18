@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -94,8 +95,8 @@ jobs:
         run: |
           for f in unit integration e2e; do
             [ -f "$RUNNER_TEMP/$f.txt" ] || continue
-            line=$(grep -E '^# (tests|pass|fail|skipped)' "$RUNNER_TEMP/$f.txt" | tr '\n' ' ')
+            line=$(grep -E '^# (tests|pass|fail|skipped)' "$RUNNER_TEMP/$f.txt" | tr '\n' ' ' || true)
             echo "::notice title=$f::$line"
-            grep -E '^not ok' "$RUNNER_TEMP/$f.txt" | head -5 | while read -r l; do echo "::error title=$f::$l"; done
+            { grep -E '^not ok' "$RUNNER_TEMP/$f.txt" || true; } | head -5 | while read -r l; do echo "::error title=$f::$l"; done
           done
-          [ -f "$RUNNER_TEMP/audit.txt" ] && echo "::notice title=audit::$(tail -3 "$RUNNER_TEMP/audit.txt" | tr '\n' ' ')"
+          if [ -f "$RUNNER_TEMP/audit.txt" ]; then echo "::notice title=audit::$(tail -3 "$RUNNER_TEMP/audit.txt" | tr '\n' ' ')"; fi
