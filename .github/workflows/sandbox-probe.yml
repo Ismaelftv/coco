@@ -13,6 +13,7 @@ on:
       - 'server/agent/**'
       - 'scripts/sandbox-probe.ts'
       - 'tests/integration/sandbox-boundaries.test.ts'
+      - 'tests/integration/sandbox-threat-model.test.ts'
       - '.github/workflows/sandbox-probe.yml'
 
 permissions:
@@ -54,9 +55,9 @@ jobs:
       - name: Testes de fronteira
         run: |
           if [ "${{ matrix.variant }}" = "root-sudo" ]; then
-            sudo env "PATH=$PATH" node --import tsx --test tests/integration/sandbox-boundaries.test.ts 2>&1 | tee "$RUNNER_TEMP/boundaries.txt" || true
+            sudo env "PATH=$PATH" node --import tsx --test tests/integration/sandbox-boundaries.test.ts tests/integration/sandbox-threat-model.test.ts 2>&1 | tee "$RUNNER_TEMP/boundaries.txt" || true
           else
-            node --import tsx --test tests/integration/sandbox-boundaries.test.ts 2>&1 | tee "$RUNNER_TEMP/boundaries.txt" || true
+            node --import tsx --test tests/integration/sandbox-boundaries.test.ts tests/integration/sandbox-threat-model.test.ts 2>&1 | tee "$RUNNER_TEMP/boundaries.txt" || true
           fi
 
       - name: Resumo

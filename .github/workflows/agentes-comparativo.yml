@@ -23,6 +23,9 @@ on:
       max_iterations:
         description: 'Máximo de iterações por tarefa'
         default: '15'
+      max_wall_seconds:
+        description: 'Limite de tempo por execução (s). Em CPU os modelos de 4B+ podem esgotar 900 s: o resultado "timeout" mede o limite, não a capacidade'
+        default: '900'
       runner:
         description: 'Runner (ex.: ubuntu-latest, ou um runner maior)'
         default: 'ubuntu-latest'
@@ -49,6 +52,7 @@ jobs:
       CFG: config/models.compare.json
       REPEAT: ${{ inputs.repeat || '1' }}
       MAXIT: ${{ inputs.max_iterations || '15' }}
+      MAXWALL: ${{ inputs.max_wall_seconds || '900' }}
       ONLY: ${{ github.event_name == 'pull_request' && 'corrigir-bug' || inputs.only }}
     steps:
       - uses: actions/checkout@v4
@@ -77,7 +81,14 @@ jobs:
           ollama pull "$TAG"
           echo "pull_s=$(( $(date +%s) - START ))" >> "$GITHUB_OUTPUT"
           SHOW=$(curl -s "$OLLAMA_URL/api/show" -d "{\"model\":\"$TAG\"}")
-          echo "$SHOW" | jq -c '{capabilities, details, license_inicio: (.license // "" | .[0:160])}' > "$RUNNER_TEMP/show.json"
+          # Licença lida do modelo EFETIVAMENTE instalado (não da documentação): impressão digital do texto completo,
+          # tamanho e linhas identificativas, para poder ser conferida contra a fonte.
+          ollama show "$TAG" --license > "$RUNNER_TEMP/licenca.txt" 2>/dev/null || true
+          LIC_SHA=$(sha256sum "$RUNNER_TEMP/licenca.txt" | cut -c1-16)
+          LIC_BYTES=$(wc -c < "$RUNNER_TEMP/licenca.txt")
+          LIC_LINES=$(grep -m4 -iE 'apache license|version 2\.0|qwen|tongyi|mit license|copyright' "$RUNNER_TEMP/licenca.txt" | sed 's/^ *//' | tr '\n' ';' | head -c 300)
+          DIGEST=$(ollama list | awk -v t="$TAG" '$1==t{print $2}')
+          echo "$SHOW" | jq -c --arg sha "$LIC_SHA" --argjson bytes "$LIC_BYTES" --arg lines "$LIC_LINES" --arg digest "$DIGEST" --arg ollama "$(ollama --version 2>&1 | tail -1)" '{capabilities, details, ollama: $ollama, modelDigest: $digest, license: {sha256_16: $sha, bytes: $bytes, linhas_identificativas: $lines}}' > "$RUNNER_TEMP/show.json"
           echo "::notice title=modelo $TAG::$(cat "$RUNNER_TEMP/show.json" | head -c 1500) | descarga: $(( $(date +%s) - START )) s | $(ollama list | grep "$TAG" | awk '{print $3,$4}')"
           if [ "${{ matrix.mode }}" = "native" ] && ! echo "$SHOW" | jq -e '.capabilities | index("tools")' > /dev/null; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
@@ -90,7 +101,7 @@ jobs:
           ARGS=()
           [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
           npx tsx scripts/agent-eval.ts --config "$CFG" --model "${{ matrix.model }}" --mode "${{ matrix.mode }}" \
-            --sandbox container --repeat "$REPEAT" --max-iterations "$MAXIT" \
+            --sandbox container --repeat "$REPEAT" --max-iterations "$MAXIT" --max-wall-seconds "$MAXWALL" \
             "${ARGS[@]}" --out "$RUNNER_TEMP/agentes.json" 2>&1 | tee "$RUNNER_TEMP/agentes.txt" || true
 
       - name: Resultados completos

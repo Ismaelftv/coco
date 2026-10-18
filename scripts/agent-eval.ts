@@ -102,6 +102,7 @@ async function main() {
       only: { type: 'string' },
       repeat: { type: 'string', default: '1' },
       'max-iterations': { type: 'string', default: '20' },
+      'max-wall-seconds': { type: 'string', default: '900' },
       out: { type: 'string' },
       'min-pass': { type: 'string', default: '0' },
       verbose: { type: 'boolean', default: false },
@@ -154,7 +155,7 @@ async function main() {
           commands: await detectCommands(ws.root),
           task: { goal: t.goal, criteria: t.criteria as SuccessCriterion[], ...(t.allowedTools ? { allowedTools: t.allowedTools } : {}), ...(t.forbiddenActions ? { forbiddenActions: t.forbiddenActions } : {}) },
           toolCalling: mode,
-          limits: { maxIterations: Number(values['max-iterations']) },
+          limits: { maxIterations: Number(values['max-iterations']), maxWallMs: Number(values['max-wall-seconds']) * 1000 },
           // Na avaliação nenhuma operação sensível é autorizada.
           confirm: async () => false,
           ...(values.verbose ? { onEvent: printEvent } : {}),
