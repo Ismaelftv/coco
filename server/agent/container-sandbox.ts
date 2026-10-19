@@ -18,6 +18,7 @@
  */
 import { execFile, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { chownTree, NOBODY, CappedBuffer, type IsolationReport, type Sandbox, type SandboxResult, type SandboxRunOptions } from './sandbox.ts';
 
 export interface ContainerSandboxOptions {
@@ -40,8 +41,8 @@ export interface ContainerSandboxOptions {
   quotaBytes?: number;
 }
 
-export const DEFAULT_QUOTA_BYTES = 256 * 1024 * 1024;
 const DIGEST_RE = /@sha256:[0-9a-f]{64}$/;
+export const DEFAULT_QUOTA_BYTES = 256 * 1024 * 1024;
 
 /** Espaço em disco ocupado por um diretório (como `du -sk`), em bytes. */
 function diskUsage(dir: string): Promise<number> {
@@ -53,7 +54,22 @@ function diskUsage(dir: string): Promise<number> {
   });
 }
 
-export const DEFAULT_SANDBOX_IMAGE = 'node:22-slim';
+/**
+ * Imagem por omissão: fixada por digest em config/sandbox-image.txt (observado na CI a 2026-10-19 para node:22-slim,
+ * ver docs/08-isolamento.md). Se o ficheiro não existir, cai na etiqueta (e a sonda/notas dizem que NÃO está fixada).
+ * Para atualizar a imagem: `docker pull node:22-slim`, ler o digest, rever e alterar o ficheiro num commit.
+ */
+function pinnedDefault(): string {
+  try {
+    const f = new URL('../../config/sandbox-image.txt', import.meta.url);
+    const v = readFileSync(f, 'utf8').split('\n')[0]?.trim();
+    if (v && DIGEST_RE.test(v)) return v;
+  } catch {
+    /* sem ficheiro */
+  }
+  return 'node:22-slim';
+}
+export const DEFAULT_SANDBOX_IMAGE = pinnedDefault();
 
 function engineCli(engine: string, args: string[], timeoutMs = 15_000) {
   const r = spawnSync(engine, args, { encoding: 'utf8', timeout: timeoutMs });

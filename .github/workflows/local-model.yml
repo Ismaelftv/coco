@@ -126,6 +126,8 @@ jobs:
         shell: bash -o pipefail -e {0}
     env:
       OLLAMA_URL: http://127.0.0.1:11434
+      # A avaliação só corre com a imagem do contentor fixada por digest (config/sandbox-image.txt).
+      FORJA_SANDBOX_REQUIRE_DIGEST: '1'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

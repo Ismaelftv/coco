@@ -29,7 +29,7 @@ objetivo ─► contexto automático (project_info + list_files)
 
 ### Ferramentas
 
-`project_info`, `list_files`, `read_file` (≤ 256 KB; 400 linhas por chamada, paginado), `search_code` (`git grep`, sem backtracking), `edit_file` (substituição exata e única), `write_file`, `delete_file` (destrutiva), `run_command` (só nomes permitidos, sem shell) e `finish`. Cada tarefa pode restringir o conjunto (`allowedTools`).
+`project_info`, `list_files`, `read_file` (≤ 256 KB; 400 linhas por chamada, paginado), `search_code` (`git grep`, sem backtracking), `edit_file` (substituição exata; **ocorrências ambíguas são recusadas** com lista de linhas e contexto — o agente desambigua com `line` ou `occurrence`+`expectedMatches`, e `version` detecta ficheiros alterados; escrita atómica, releitura e verificação, reposição se falhar; `TOOLS_VERSION` 2), `write_file`, `delete_file` (destrutiva), `run_command` (só nomes permitidos, sem shell) e `finish`. Cada tarefa pode restringir o conjunto (`allowedTools`).
 
 ### Independência do modelo (ADR-0014)
 
@@ -99,3 +99,12 @@ Para o catálogo: acrescentar `"toolCalling": "native"` aos modelos cujo servido
 ## 6. Por fazer
 
 Ver `docs/04-pendentes.md` (Fase 5): integração do agente na interface web, sandbox por microVM, ferramentas de web com lista de destinos, mais tarefas e linguagens na avaliação, suporte a vários comandos configuráveis por projeto, edição multi-ficheiro atómica, índice semântico do código.
+
+
+## Versões das ferramentas e da suite (resultados que não se misturam)
+
+- `TOOLS_VERSION` (em `server/agent/tools.ts`) e `suiteVersion` (`evals/agent/tarefas.json`) ficam em cada relatório (`config.toolsVersion`, `config.suiteSha256`, `config.commit`). Resultados com versões diferentes são publicados em pastas separadas e **nunca** agregados.
+- `toolsVersion 1` (até ao commit `5651dc2`): `edit_file` recusava ambiguidades sem dizer onde estavam. `toolsVersion 2`: ver acima.
+- Suite v2 → v3: `corrigir-bug` perdeu o critério `file-contains` (dependia do texto exato da solução e aparecia ao modelo nas recusas). A v2 está em `evals/agent/historico/`.
+- As soluções de referência (`evals/agent/referencia/solucoes.json`) validam o instrumento (`npm run agent-reference`, `tests/integration/eval-controls.test.ts`) e nunca são dadas aos modelos.
+- Causas das falhas (`server/agent/classify.ts`): `success`, `timeout`, `tool_failure`, `model_no_action`, `tests_failed`, `integrity_violation`, `model_error`, `infrastructure`.

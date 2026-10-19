@@ -68,15 +68,15 @@ Por isso a primeira avaliação de agentes (PR #3) correu **sem isolamento de re
 1. **Kernel partilhado**: um contentor não protege contra exploits de kernel nem de runtime. Para código de terceiros multiutilizador em produção é preciso uma microVM (Firecracker) ou gVisor por trás da interface `Sandbox`.
 2. **Quem fala com o daemon do Docker é equivalente a root no anfitrião.** O servidor da Forja não deve ter acesso ao socket do Docker em produção; a execução deve ser um serviço separado (Podman rootless, ou uma máquina/microVM dedicada) que só recebe pedidos "corre este argv neste espaço de trabalho".
 3. **Sem rede dentro do contentor**: não é possível instalar dependências durante a execução. Projetos com dependências precisam delas na imagem ou no espaço de trabalho (`node_modules` não é copiado). As fixtures de avaliação não têm dependências.
-4. **Disco**: o espaço de trabalho (bind mount) não tem quota total; só há limite por ficheiro (64 MB). Falta uma quota/ verificação do tamanho total.
-5. **Imagem**: `node:22-slim` por etiqueta; em produção, fixar por *digest* e construir uma imagem própria mínima.
+4. **Disco**: ver §6–7: há limite por ficheiro (64 MiB), `/tmp` em memória (256 MB) e uma quota de **crescimento** do espaço de trabalho por vigilância (256 MiB por omissão), que **não** é imposta pelo kernel.
+5. **Imagem**: fixada por *digest* em `config/sandbox-image.txt` (ver §7); em produção convém construir uma imagem própria mínima.
 6. **Sondas medem o que medem**: um nível `strong` significa "as fronteiras comportamentais testadas resistiram", não "é impossível escapar".
 
 ## 5. Testes de fronteira (ficheiro 1)
 
 `tests/integration/sandbox-boundaries.test.ts` (20 testes): declarado = observado; processo nunca `strong`; rede (loopback e DNS); segredo `0600` e link simbólico; ambiente; FS só de leitura, servidor não montado, sem socket do Docker; sem capacidades/root/`no-new-privileges`; tempo limite pára o contentor; "fork bomb" contida pelo cgroup de PIDs; limite de memória; porta de confiança (`untrusted` sem veredicto, com `process` ou forjado é recusado sem chamar o modelo nem executar comandos; com contentor corre); ficheiros sensíveis nunca chegam à sandbox; links simbólicos para fora recusados.
 
-`tests/integration/sandbox-threat-model.test.ts` (17 testes, ver §6) completa este ficheiro com provas positivas e negativas por propriedade.
+`tests/integration/sandbox-threat-model.test.ts` (22 testes, ver §6) completa este ficheiro com provas positivas e negativas por propriedade.
 
 ## 6. Modelo de ameaças e garantias por ambiente
 
@@ -111,9 +111,10 @@ Legenda: ✔ verificado por teste que passou neste ambiente · ✘ verificado qu
 | Limite de processos (fork bomb) | ○ | ○ | ✔ | ✔ |
 | Limite de CPU (`ulimit -t`) | ○ | ○ | ✔ | ✔ |
 | Limite de ficheiro único e do `/tmp` (ENOSPC) | ○ | ○ | ✔ | ✔ |
-| **Quota do espaço de trabalho total** | ✘ | ✘ | ✘ **(não existe)** | ✘ **(não existe)** |
+| Quota de **crescimento** do espaço de trabalho (vigilância por amostragem de 300 ms, 256 MiB por omissão; **não** imposta pelo kernel) | ✘ | ✘ | ✔ (parou escritor lento e rápido; ultrapassa o limite, ver §7) | ✔ (testes passaram na CI) |
 | Tempo limite pára tudo; filhos que ignoram SIGTERM; sem órfãos nem contentores por limpar | ✔ (grupo de processos) | ○ | ✔ | ✔ |
-| AppArmor/SELinux do anfitrião a confinar o contentor | n/a | n/a | ○ | ○ (o runner é Ubuntu 24.04 com AppArmor; o perfil aplicado não foi lido) |
+| AppArmor/SELinux a confinar o contentor | n/a | n/a | ✘ **não existe** (`attr/current=kernel`; o teste salta com motivo) | ✔ `docker-default (enforce)`, `apparmor.enabled=Y` (execução `39196629382`) |
+| Imagem fixada por digest | n/a | n/a | ✔ digest da imagem mínima local (não é a oficial) | ✔ `node@sha256:c3de60bf…978392` (observado a 2026-10-19; fixada em `config/sandbox-image.txt`) |
 
 A coluna "Proc (CI)" é a que justifica a regra: no runner, a sandbox de processo **não isola nada** e por isso **não executa código não confiável** (porta de confiança, `sandbox_insufficient`).
 
@@ -136,12 +137,14 @@ Comando gerado por `ContainerSandbox.run` (`server/agent/container-sandbox.ts`):
 | Utilizador | `--user <uid>:<gid>` (`nobody` se o servidor é root; senão o uid do servidor) | sem privilégios no contentor; `--cap-drop ALL`; `no-new-privileges` |
 | Sistema de ficheiros | `--read-only`; só `/work` (bind do espaço de trabalho) e `/tmp` (tmpfs 256 MB, `nosuid`) graváveis | o servidor, `$HOME` e o socket do Docker não são montados |
 | Rede | `--network none` | verificado: só `lo` |
-| Recursos | `--memory/--memory-swap` 1 GiB, `--cpus` 2, `--pids-limit` 256, `ulimit` fsize 64 MiB, nofile 512, core 0, cpu 120 s | memória/PIDs/CPU/ficheiro verificados por teste; **sem quota do total do `/work`** |
-| Seccomp / AppArmor | **não definidos explicitamente**: vale o perfil por omissão do motor | seccomp observado ativo localmente; AppArmor não verificado |
+| Recursos | `--memory/--memory-swap` 1 GiB, `--cpus` 2, `--pids-limit` 256, `ulimit` fsize 64 MiB, nofile 512, core 0, cpu 120 s | memória/PIDs/CPU/ficheiro verificados por teste |
+| Quota do espaço de trabalho | crescimento máximo de 256 MiB por comando (`quotaBytes`), medido com `du` a cada 300 ms; excedido → o contentor é morto, `quotaExceeded: true` e aviso na saída | **não é imposta pelo kernel**. Medido localmente com limite de 8 MiB: um escritor lento (1 MiB/20 ms) parou aos 20 MiB; um rápido (~200 MiB/s) só parou aos 217 MiB. Logo o excesso possível é da ordem de centenas de MiB, não ilimitado. Para garantia real: volume com quota própria (xfs *project quota*, loopback por execução) |
+| Seccomp / AppArmor | **não definidos explicitamente**: vale o perfil por omissão do motor | seccomp ativo observado (local e CI); AppArmor `docker-default` ativo **só na CI**, ausente na máquina de desenvolvimento |
+| Runtime | `runc` do motor; `FORJA_SANDBOX_RUNTIME`/`runtime` permite `runsc` (gVisor) ou Kata | um runtime inexistente falha (testado), não cai em silêncio no runc |
 | Processo 1 | `--init` | filhos órfãos não sobrevivem; verificado |
 | Duração e limpeza | timer + `docker kill` + `docker rm -f`; `--rm` | verificado: nada fica a correr nem parado (`docker ps -a`) |
 | Segredos | ambiente construído de raiz (sem herdar `process.env`); ficheiros sensíveis nem sequer são copiados para o espaço de trabalho | verificado |
-| Imagem | `node:22-slim` por etiqueta | **por fixar por digest**; imagem própria mínima em produção |
+| Imagem | `node@sha256:c3de60bf…978392` (`config/sandbox-image.txt`), com o ID e os digests reais registados em cada execução (`ContainerSandbox.imageInfo`, notas de isolamento, relatório da avaliação) | `FORJA_SANDBOX_REQUIRE_DIGEST=1` recusa etiquetas (obrigatório nas avaliações da CI). Atualizar = decisão humana num commit. Imagem própria mínima continua recomendada em produção |
 | Rede do anfitrião para dentro | o contentor não publica portas | — |
 
 ## 8. O Docker é suficiente?
@@ -154,10 +157,32 @@ Depende do cenário; **não** para todos:
 
 Não se monta o socket do Docker no agente, não se passam segredos ao código executado, e as ferramentas continuam sujeitas a permissões explícitas (confirmação, `allowedTools`, `forbiddenActions`).
 
-## 9. Limitações que permanecem (resumo)
+## 9. Local, CI e produção: diferenças
 
-1. Sem quota para o total do espaço de trabalho (teste que o afirma, para ser atualizado se se implementar).
-2. Seccomp/AppArmor dependem do perfil por omissão do anfitrião; só o seccomp foi observado ativo (local e CI); o AppArmor não foi lido.
-3. Imagem não fixada por digest; a validação local usou imagem mínima própria, não a oficial.
-4. Kernel partilhado (ver §8).
+| | Máquina de desenvolvimento (VM Firecracker, root) | CI (runner GitHub, VM efémera) | Produção (não existe ainda) |
+|---|---|---|---|
+| Sandbox de processo | `process` (nobody + `unshare`) | **`none`**: não isola | não usar |
+| Contentor | `strong` com imagem mínima própria, **sem AppArmor** | `strong` com imagem oficial por digest, **AppArmor `docker-default`** | só como camada; exigir microVM/gVisor para multiutilizador |
+| Rede do contentor | `--network none` ✔ | ✔ | ✔ + sem rota para a rede interna da Forja |
+| Segredos no ambiente do runner | n/a | `GITHUB_TOKEN` só de leitura; o contentor não o recebe (ambiente limpo) | os segredos do servidor nunca no serviço de execução |
+| Quota de disco | amostragem | amostragem (testes passaram) | volume com quota |
+| Quem fala com o Docker | o mesmo utilizador (root) | o passo do workflow | serviço isolado; nunca o servidor da API |
+
+Por isso um resultado de segurança obtido num ambiente **não se transfere** para outro sem repetir a sonda lá.
+
+## 10. gVisor e microVM para utilização multiutilizador
+
+**Estado: avaliado por desenho, só gVisor tem verificação preparada; nada disto está em uso.**
+
+- **gVisor (`runsc`)**: encaixa na mesma interface (`ContainerSandbox({ runtime: 'runsc' })`, sem outras alterações). Reduz a superfície do kernel do anfitrião (as chamadas ao sistema são tratadas por um kernel em espaço de utilizador), a troco de desempenho e de compatibilidade (alguns `/proc`, cgroups e chamadas não existem ou diferem). O workflow manual `.github/workflows/sandbox-gvisor.yml` instala o `runsc` num runner e corre a sonda e os testes de fronteira; **ainda não foi executado**, logo não há resultados e nenhuma afirmação sobre o gVisor.
+- **microVM (Firecracker/Kata)**: fronteira de hardware (KVM), a opção adequada para código de utilizadores diferentes. Requer anfitrião com `/dev/kvm`, imagem de kernel/rootfs próprias, rede e armazenamento por VM e orquestração. Não implementado nem testado aqui; a interface `Sandbox` (`run(argv, root, limites) → resultado`) foi desenhada para o permitir sem alterar o ciclo do agente.
+- **Recomendação** (decisão a tomar antes de qualquer utilização multiutilizador): microVM como alvo; gVisor como degrau intermédio se KVM não existir; contentor `runc` apenas para avaliações em máquinas efémeras e para o programador a correr os seus próprios projetos.
+
+## 11. Limitações que permanecem (resumo)
+
+1. A quota de armazenamento é por vigilância (amostragem), não do kernel: pode ser ultrapassada por centenas de MiB antes de o comando ser parado.
+2. AppArmor só verificado na CI; na máquina de desenvolvimento não existe confinamento obrigatório. Seccomp: perfil por omissão do motor (observado ativo, não auditado).
+3. A imagem está fixada por digest, mas o conteúdo (pacotes Debian/Node) não foi auditado; e a verificação local usou uma imagem mínima própria.
+4. Kernel partilhado (ver §8); gVisor/microVM não avaliados com resultados.
 5. Os testes de fuga limitam-se a tentativas comuns de contorno; **não são uma auditoria** nem uma prova de impossibilidade.
+6. Sem rede dentro do contentor, projetos com dependências precisam delas já no espaço de trabalho.
