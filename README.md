@@ -1,6 +1,6 @@
 # Forja
 
-Plataforma de assistente de IA. **Estado atual: Fase 4.** Contas, histórico e ficheiros em PostgreSQL. A plataforma executa **modelos de pesos abertos na nossa própria infraestrutura**: Ollama para desenvolvimento, vLLM para escala. A troca de modelo faz-se por configuração, e as APIs comerciais são opcionais.
+Plataforma de assistente de IA. **Estado atual: Fase 5 (agentes de programação, sem interface web).** Contas, histórico e ficheiros em PostgreSQL. Há um agente de programação por linha de comandos (`npm run agent`), com sandbox em contentor verificada por comportamento e ferramentas de edição seguras (ver [`docs/07-agentes.md`](docs/07-agentes.md) e [`docs/08-isolamento.md`](docs/08-isolamento.md)). A plataforma executa **modelos de pesos abertos na nossa própria infraestrutura**: Ollama para desenvolvimento, vLLM para escala. A troca de modelo faz-se por configuração, e as APIs comerciais são opcionais.
 
 > Os modelos usados (ex.: Qwen3, da Alibaba, Apache 2.0) são de terceiros e não foram adaptados por nós. Ver o que é próprio e o que não é em [`docs/06-modelos.md`](docs/06-modelos.md).
 
