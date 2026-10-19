@@ -60,7 +60,7 @@ Total do piloto: 57,5 minutos de runner (4 jobs em paralelo). Os tokens por segu
 
 Observações com cautela:
 
-- O Qwen3 4B tem modo «thinking» e gastou os 900 s com apenas 4 chamadas ao modelo; o `timeout` mede o limite de tempo em CPU, **não** a capacidade do modelo. A última chamada foi cancelada pelo limite (`model_error: cancelado` aos 385 s na chamada final no modo prompted).
+- O Qwen3 4B gastou os 900 s com apenas 4 chamadas ao modelo. O raciocínio explícito estava **desligado** na configuração (`think: false`, valor por omissão do catálogo), mas o texto do plano guardado no relatório começa com «Okay, let's tackle this problem…», isto é, o modelo escreve raciocínio no próprio conteúdo; quanto desse volume (2 210–3 510 tokens estimados) é raciocínio e quanto é resposta não foi medido. O `timeout` mede o limite de tempo em CPU, **não** a capacidade do modelo. A última chamada foi cancelada pelo limite (`model_error: cancelado` aos 385 s na chamada final no modo prompted).
 - A diferença de tempo entre Coder 7B native (840 s) e prompted (358 s) com os mesmos tokens aproxima-se da diferença de CPU entre jobs (EPYC 7763 vs 9V45), não do modo.
 
 ## Requisitos de hardware (observados, não extrapolados)
@@ -94,7 +94,7 @@ Resultados: `python3 scripts/ci-results.py <run_id> --out docs/resultados/<pasta
 **Manter o modelo predefinido.** Antes de qualquer recomendação de mudança é preciso:
 
 1. Corrigir/avaliar a ferramenta `edit_file` (indicar as linhas das ocorrências quando há ambiguidade) **numa versão da suite registada**, para não medir a ferramenta em vez do modelo — e repetir o controlo com o oráculo.
-2. Um limite de tempo que não domine o resultado (ou GPU / runner maior) e, para Qwen3, decidir e registar se o modo «thinking» fica ligado.
+2. Um limite de tempo que não domine o resultado (ou GPU / runner maior) e medir o volume de texto de «raciocínio» no conteúdo do Qwen3 4B (o texto do plano sugere que `think: false` não o evita por completo; não verificado).
 3. Pelo menos as 6 tarefas × ≥3 repetições por configuração, com intervalos de confiança, e relatar execução, qualidade, injeção e sandbox em separado.
 4. Confirmar o texto completo das licenças (impressão digital guardada pelo workflow) e o *digest* dos modelos.
 5. Decidir com o custo ao lado: memória (5–6 GB), tempo por tarefa e minutos de CI.

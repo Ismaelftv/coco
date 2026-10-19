@@ -104,7 +104,7 @@ Legenda: ✔ verificado por teste que passou neste ambiente · ✘ verificado qu
 | Socket do Docker ausente | n/a | n/a | ✔ | ✔ |
 | Não corre como root; capacidades zero; `no-new-privileges` | parcial (`nobody`) | ✘ | ✔ | ✔ |
 | Namespaces PID/rede/mount/IPC/UTS distintos do anfitrião | ✘ (só rede, PID se root) | ✘ | ✔ | ✔ |
-| `setuid(0)`, `mount`, `unshare`, `chroot`, `su`, `sudo`, subir ulimits falham | ○ | ○ | ✔ (só `setuid` e ulimit: a imagem local não tem os binários) | ✔ (resultado passou; que binários existem em `node:22-slim` não foi registado — ver nota) |
+| `setuid(0)`, `mount`, `unshare`, `chroot`, `su`, `sudo`, subir ulimits falham | ○ | ○ | ✔ (só `setuid` e ulimit: a imagem local não tem os binários) | ✔ tentativas executadas e falhadas: `setuid`, `setgid`, `mount`, `unshare`, `chroot`, `su`, subir ulimit; `sudo` não existe na imagem |
 | Escrever em `cgroup.procs`/`memory.max`/`pids.max` falha | n/a | n/a | ✔ | ✔ |
 | Seccomp ativo (`Seccomp: 2`) | ○ | ○ | ✔ (perfil por omissão do Docker) | ✔ (o teste teria saltado se não fosse 2; nas 3 variantes não saltou) |
 | Limite de memória (OOM) | ○ | ○ | ✔ | ✔ |
@@ -119,7 +119,7 @@ A coluna "Proc (CI)" é a que justifica a regra: no runner, a sandbox de process
 
 Fonte dos ✔ "Cont-CI": execução `39177049022` (CI principal; 154 testes de integração, 151 passaram, 0 falharam, 3 saltados — dois de fronteira de processo com motivo e o de TLS) e `39177049028` (sonda, 3 variantes: 37 testes cada, 0 falhas; saltados: 1 em `root-sudo`, 3 em `default`, 2 em `userns-relaxed`, incluindo em todos o teste da API da Forja, que ali não tem base de dados e só correu na CI principal). Local: 154 testes de integração passaram com o contentor mínimo.
 
-**Nota (não verificado)**: o teste de privilégios imprime quais das tentativas (`mount`, `unshare`, `chroot`, `su`, `sudo`) tinham binário na imagem; a CI ainda não publicava essa linha. Passa a publicar-se (`# privilégios:`), pelo que a próxima execução dirá se foram tentativas reais ou triviais. Até lá, na CI só está comprovado `setuid(0)` → `EPERM` e `ulimit` não subir.
+**Nota**: na execução `39177421262` (commit `a6db311`) o teste publicou `tentativas efetivamente executadas: setuid,setgid,mount,unshare,chroot,su,subirNofile; binário ausente: sudo`. Na imagem mínima local só `setuid`/`setgid`/ulimit eram tentativas reais. "Falhou" não distingue o motivo (p. ex. `su` falha por exigir palavra-passe, não por ser bloqueado pelo kernel); o que se afirma é que **nenhuma** funcionou.
 
 ### Quando uma propriedade não está comprovada
 

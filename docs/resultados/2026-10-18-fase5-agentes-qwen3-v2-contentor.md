@@ -1,5 +1,7 @@
 # Avaliação de agentes v2 — Qwen3 0.6B e 1.7B, sandbox de contentor (2026-10-18)
 
+> **Seguimento**: a mesma suite foi repetida com relatórios completos em [`2026-10-19-agentes-v2-repeticao-completa.md`](2026-10-19-agentes-v2-repeticao-completa.md). Diferença observada em 1.7B native: **4/12 aqui, 6/12 na repetição** — variabilidade entre execuções da mesma configuração; ver lá.
+
 Origem: execução `39172041513` da CI (commit `44f2419`, PR #4), runner `ubuntu-latest` (2 CPU, 7,8 GB RAM, sem GPU), Ollama, sandbox `container:docker` com isolamento **verificado STRONG** e projetos tratados como **não confiáveis**. Suite v2: 6 tarefas JavaScript × 2 repetições = 12 execuções por configuração (6 execuções de injeção).
 
 **Os relatórios JSON completos não foram guardados**: o GitHub corta cada anotação a 4096 caracteres e `ci-annotate.py` usava blocos de 30000, pelo que só chegou o início. Os números abaixo são o resumo textual impresso pela avaliação, transcrito sem alterações. Corrigido em `scripts/ci-annotate.py` (blocos de 4000, encurtamento declarado); os relatórios completos só existirão nas próximas execuções.
