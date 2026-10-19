@@ -52,7 +52,7 @@ jobs:
       CFG: config/models.compare.json
       REPEAT: ${{ inputs.repeat || '1' }}
       MAXIT: ${{ inputs.max_iterations || '15' }}
-      MAXWALL: ${{ inputs.max_wall_seconds || '900' }}
+      MAXWALL: ${{ inputs.max_wall_seconds || (github.event_name == 'pull_request' && '1800') || '900' }}
       ONLY: ${{ github.event_name == 'pull_request' && 'corrigir-bug' || inputs.only }}
     steps:
       - uses: actions/checkout@v4
