@@ -7,6 +7,7 @@ export type AuditAction =
   | 'auth.logout'
   | 'conversation.delete'
   | 'file.upload'
+  | 'image.generate'
   | 'file.delete'
   | 'import.local';
 

@@ -58,6 +58,18 @@ export const updateConversationSchema = z
   })
   .refine((v) => v.title !== undefined || v.model !== undefined, { message: 'Nada para alterar.' });
 
+/** Pedido para criar uma imagem na conversa (o texto do pedido é a mensagem do utilizador). */
+export const createImageSchema = z.object({
+  prompt: z.string().trim().min(1, 'Descreve a imagem.').max(1000, 'A descrição excede 1000 caracteres.'),
+  userMessageId: uuid,
+  assistantMessageId: uuid,
+});
+
+/** O que a instalação consegue fazer (mostrado na interface). */
+export interface Capabilities {
+  images: { available: false } | { available: true; label: string; size: string };
+}
+
 export const sendMessageSchema = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('send'),

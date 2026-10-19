@@ -12,6 +12,21 @@ const MODEL_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 
 const PRIVATE_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[?::1\]?|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|[a-z0-9-]+(\.internal|\.local|\.svc(\.cluster\.local)?)?)$/i;
 
+/** Regras de segurança do endereço de um servidor (modelos de texto ou de imagem). */
+function checkBackendUrl(b: { baseUrl: string; hosting: 'self-hosted' | 'external' }, who: string, ctx: z.RefinementCtx) {
+  const url = new URL(b.baseUrl);
+  // Tráfego para fora da nossa rede tem de ir cifrado.
+  if (url.protocol !== 'https:' && !PRIVATE_HOST.test(url.hostname)) {
+    ctx.addIssue({ code: 'custom', message: `${who}: HTTP sem TLS só é aceite para endereços locais ou privados.` });
+  }
+  if (b.hosting === 'external' && url.protocol !== 'https:') {
+    ctx.addIssue({ code: 'custom', message: `${who}: serviços externos exigem HTTPS.` });
+  }
+  if (url.username || url.password) {
+    ctx.addIssue({ code: 'custom', message: `${who}: credenciais no URL não são permitidas; usa apiKeyEnv.` });
+  }
+}
+
 export const backendSchema = z
   .object({
     id: z.string().regex(MODEL_ID),
@@ -30,19 +45,7 @@ export const backendSchema = z
     /** Campos extra para o corpo do pedido, específicos do servidor. */
     extraBody: z.record(z.unknown()).optional(),
   })
-  .superRefine((b, ctx) => {
-    const url = new URL(b.baseUrl);
-    // Tráfego para fora da nossa rede tem de ir cifrado.
-    if (url.protocol !== 'https:' && !PRIVATE_HOST.test(url.hostname)) {
-      ctx.addIssue({ code: 'custom', message: `Backend "${b.id}": HTTP sem TLS só é aceite para endereços locais ou privados.` });
-    }
-    if (b.hosting === 'external' && url.protocol !== 'https:') {
-      ctx.addIssue({ code: 'custom', message: `Backend "${b.id}": serviços externos exigem HTTPS.` });
-    }
-    if (url.username || url.password) {
-      ctx.addIssue({ code: 'custom', message: `Backend "${b.id}": credenciais no URL não são permitidas; usa apiKeyEnv.` });
-    }
-  });
+  .superRefine((b, ctx) => checkBackendUrl(b, `Backend "${b.id}"`, ctx));
 
 export const modelSchema = z.object({
   /** Id público na Forja (o que o frontend vê). */
@@ -66,10 +69,32 @@ export const modelSchema = z.object({
   toolCalling: z.enum(['native', 'prompted']).default('prompted'),
 });
 
+/**
+ * Geração de imagens (opcional): um servidor com a API `POST {baseUrl}/images/generations` compatível com a
+ * OpenAI (LocalAI, entre outros). Sem esta secção, o botão "Criar imagem" não aparece.
+ */
+export const imageBackendSchema = z
+  .object({
+    label: z.string().min(1).max(60).default('Imagens locais'),
+    /** URL terminado em /v1 (ex.: http://127.0.0.1:8080/v1). */
+    baseUrl: z.string().url(),
+    hosting: z.enum(['self-hosted', 'external']),
+    /** Nome do modelo de imagem no servidor. */
+    model: z.string().min(1).max(200),
+    apiKeyEnv: z.string().regex(ENV_NAME, 'Nome de variável de ambiente inválido.').optional(),
+    /** Tamanho pedido (LxA). Em CPU, tamanhos pequenos são muito mais rápidos. */
+    size: z.string().regex(/^\d{3,4}x\d{3,4}$/, 'Formato LxA, ex.: 512x512').default('512x512'),
+    /** Em CPU uma imagem pode demorar vários minutos. */
+    timeoutMs: z.number().int().min(10_000).max(1_800_000).default(900_000),
+    extraBody: z.record(z.unknown()).optional(),
+  })
+  .superRefine((b, ctx) => checkBackendUrl(b, 'Imagens', ctx));
+
 export const catalogSchema = z
   .object({
     backends: z.array(backendSchema).default([]),
     models: z.array(modelSchema).default([]),
+    images: imageBackendSchema.optional(),
   })
   .superRefine((c, ctx) => {
     const backends = new Set<string>();
@@ -90,6 +115,7 @@ export const catalogSchema = z
 
 export type BackendConfig = z.infer<typeof backendSchema>;
 export type ModelConfig = z.infer<typeof modelSchema>;
+export type ImageBackendConfig = z.infer<typeof imageBackendSchema>;
 export type Catalog = z.infer<typeof catalogSchema>;
 
 export function parseCatalog(json: unknown, source = 'catálogo'): Catalog {
