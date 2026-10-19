@@ -75,3 +75,9 @@ jobs:
           awk '/^[[:space:]]*not ok/{p=1} p{print} p && /^[[:space:]]*\.\.\.$/{p=0}' "$RUNNER_TEMP/boundaries.txt" | head -c 3500 > "$RUNNER_TEMP/falhas.txt" || true
           if [ -s "$RUNNER_TEMP/falhas.txt" ]; then echo "::error title=detalhe ${{ matrix.variant }}::$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$RUNNER_TEMP/falhas.txt")"; fi
           ! grep -qE '^\s*not ok' "$RUNNER_TEMP/boundaries.txt"
+
+      - name: Diagnóstico de paragem do contentor
+        if: always() && matrix.variant == 'default'
+        run: |
+          bash scripts/ci-diag-stop.sh > "$RUNNER_TEMP/diag-stop.txt" 2>&1 || true
+          echo "::notice title=diag-paragem::$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$RUNNER_TEMP/diag-stop.txt" | head -c 3800)"
