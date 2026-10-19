@@ -1,7 +1,7 @@
 {
-  "state": "blocked",
-  "reason": "execução de jobs recusada pelo GitHub: pagamentos recentes falharam ou limite de gastos por aumentar (os jobs nem arrancam)",
+  "state": "ok",
+  "reason": "CI do GitHub a correr no repositório público Ismaelftv/coco",
   "since": "2026-10-19",
-  "lastVerifiedBy": "gh api .../check-runs/<id>/annotations nos runs 39200568018/021/178 (commit b5a5dd4)",
-  "note": "Repositório passou a público e foi renomeado (2026-10-19). Run 39281055881 (workflow_dispatch) ficou 'queued' sem runner durante >12 min: ainda NÃO confirmado que a CI do GitHub volta a correr. Mudar para \"ok\" apenas depois de uma execução concluir com sucesso."
+  "lastVerifiedBy": "runs do commit d327301: CI, Isolamento da sandbox (3 variantes) e Modelo local (Ollama) concluídos com sucesso",
+  "note": "CI do GitHub: unit 56/56, integração 200/203 (3 ignorados), E2E 13/13, auditoria npm sem falhas ≥ high, fronteiras 40-42/43 por variante (1-3 ignorados). Runners de 4 vCPU no repositório público."
 }

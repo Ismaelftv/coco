@@ -1,6 +1,6 @@
 # CI local (sem GitHub Actions)
 
-**Estado do GitHub Actions: BLOQUEADO.** Desde 2026-10-19 os jobs nem arrancam ("recent account payments have failed or your spending limit needs to be increased"; commit `b5a5dd4`, runs 39200568018/021/178). Está registado em `config/github-ci-status.json` e aparece em cada relatório local. Só passa a `ok` depois de o workflow `CI` concluir com sucesso no GitHub.
+**Estado do GitHub Actions: A FUNCIONAR (2026-10-19).** O repositório passou a público (`Ismaelftv/coco`) e a CI voltou a correr: commit `d327301` verde (CI, sandbox e Ollama). A CI local mantém-se como verificação independente. *Histórico:* até então os jobs nem arrancavam ("recent account payments have failed or your spending limit needs to be increased"; commit `b5a5dd4`, runs 39200568018/021/178). Está registado em `config/github-ci-status.json` e aparece em cada relatório local. Foi posto a `ok` depois de o workflow `CI` concluir com sucesso.
 
 Os resultados deste documento são **locais**: não são a CI do GitHub e não a substituem. Os workflows em `.github/workflows/` não foram alterados e podem voltar a ser usados quando o bloqueio acabar.
 
@@ -79,3 +79,7 @@ Executado neste ambiente (`--db local`, imagem `forja-sandbox-local:test`): type
 - O código do próprio repositório corre no anfitrião (tal como num runner); só os projetos avaliados/não confiáveis correm no contentor do sandbox, com os controlos de `08-isolamento.md`. A CI local não deve ser apontada a branches de terceiros sem os rever, porque `npm ci`/testes executam código arbitrário no anfitrião.
 - O Docker local partilha o kernel e tem as garantias descritas em `08-isolamento.md`; a sonda de AppArmor depende do anfitrião.
 - Diferenças em relação à CI do GitHub: sem matriz de sistemas, sem `npm ci` limpo (usa o `node_modules` existente), versão de Node/Docker do utilizador.
+
+## Lição da migração para runners públicos (2026-10-19)
+
+Os runners do repositório público têm 4 vCPU (os privados tinham 2), por isso o `node --test` passou a correr os ficheiros de teste **em paralelo**. Os testes da sandbox verificavam `docker ps --filter name=forja-sbx-` e viam os contentores de outro ficheiro, falhando de forma intermitente. Correções: o nome do contentor inclui o PID do processo e cada teste só verifica os seus; além disso o limite de tempo passou a insistir na remoção até o contentor existir (corrida de arranque lento) e a confirmar a ausência. Testes novos cobrem o tempo limite durante o arranque.
