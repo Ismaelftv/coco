@@ -5,6 +5,7 @@
  */
 import type {
   ApiError,
+  Capabilities,
   ConversationDetail,
   ConversationSummary,
   FileInfo,
@@ -67,6 +68,9 @@ export const api = {
     }),
   logout: () => json<void>('/api/auth/logout', { method: 'POST' }),
 
+  capabilities: () => json<Capabilities>('/api/capabilities'),
+  createImage: (conversationId: string, payload: { prompt: string; userMessageId: string; assistantMessageId: string }, signal?: AbortSignal) =>
+    json<{ fileId: string }>(`/api/conversations/${conversationId}/images`, { method: 'POST', body: body(payload), ...(signal ? { signal } : {}) }),
   models: (signal?: AbortSignal) => json<{ models: ModelInfo[] }>('/api/models', signal ? { signal } : {}),
 
   listConversations: (params: { q?: string; cursor?: string | null }, signal?: AbortSignal) => {
