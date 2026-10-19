@@ -195,10 +195,24 @@ export class ContainerSandbox implements Sandbox {
 
     return new Promise<SandboxResult>((resolvePromise) => {
       const child = spawn(this.engine, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+      let killing = false;
       const kill = () => {
-        // Matar o cliente não pára o contentor: é preciso pedir ao motor.
-        spawnSync(this.engine, ['kill', name], { timeout: 10_000, stdio: 'ignore' });
-        child.kill('SIGKILL');
+        // Matar o cliente não pára o contentor: é preciso pedir ao motor. E se o limite chega ANTES de o
+        // motor ter criado o contentor, `kill`/`rm` falham ("No such container") e, se o cliente morresse já,
+        // o contentor seria criado e arrancado depois, órfão. Por isso: insistir na remoção (até 10 s) enquanto
+        // o cliente viver e o contentor não existir, e só então matar o cliente.
+        if (killing) return;
+        killing = true;
+        void (async () => {
+          const end = Date.now() + 10_000;
+          while (Date.now() < end) {
+            const r = spawnSync(this.engine, ['rm', '-f', name], { encoding: 'utf8', timeout: 10_000 });
+            if (r.status === 0) break; // removido (o cliente termina sozinho)
+            if (child.pid === undefined || child.exitCode !== null || child.signalCode !== null) break;
+            await new Promise((res) => setTimeout(res, 100));
+          }
+          child.kill('SIGKILL');
+        })();
       };
       const timer = setTimeout(() => {
         timedOut = true;
