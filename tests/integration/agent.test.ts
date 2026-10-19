@@ -526,8 +526,13 @@ describe('ligação ao registo de modelos (servidor falso compatível com Ollama
           commands: [],
           task: { goal: 'Teste #ferramenta', criteria: [{ type: 'changed' }] },
           limits: { maxIterations: 5 },
+          temperature: 0.4,
+          seed: 1234,
         });
         assert.equal(r.model.toolCalling, 'native');
+        const sent = fake.requests.find((q) => Array.isArray(q.body.tools))!.body as { options?: { seed?: number; temperature?: number }; seed?: number; temperature?: number };
+        assert.equal(kind === 'ollama' ? sent.options?.seed : sent.seed, 1234, 'semente enviada ao servidor');
+        assert.equal(kind === 'ollama' ? sent.options?.temperature : sent.temperature, 0.4);
         assert.ok(r.steps.some((s) => s.kind === 'tool' && s.tool === 'project_info'), 'a primeira ferramenta da lista foi chamada pelo servidor');
         const withTools = fake.requests.filter((q) => Array.isArray(q.body.tools));
         assert.ok(withTools.length >= 2);

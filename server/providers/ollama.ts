@@ -101,6 +101,7 @@ export function createOllamaBackend(options: OllamaOptions): ModelBackend {
               num_ctx: request.contextTokens,
               ...(request.maxOutputTokens ? { num_predict: request.maxOutputTokens } : {}),
               ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+              ...(request.seed !== undefined ? { seed: request.seed } : {}),
             },
           }),
           signal: combined,

@@ -240,6 +240,8 @@ export interface AgentRunOptions {
   confirm?: (request: ConfirmationRequest) => Promise<boolean>;
   onEvent?: (event: AgentEvent) => void;
   temperature?: number;
+  /** Semente enviada ao servidor de modelos (repetições controladas). */
+  seed?: number;
   signal?: AbortSignal;
   registry?: ToolRegistry;
 }
@@ -402,6 +404,7 @@ export async function runAgent(options: AgentRunOptions): Promise<AgentReport> {
           messages,
           maxOutputTokens: limits.maxOutputTokensPerTurn,
           ...(options.temperature !== undefined ? { temperature: options.temperature } : {}),
+          ...(options.seed !== undefined ? { seed: options.seed } : {}),
           ...(tools ? { tools } : {}),
         },
         signal,

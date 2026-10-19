@@ -26,6 +26,12 @@ on:
       max_wall_seconds:
         description: 'Limite de tempo por execução (s). Em CPU os modelos de 4B+ podem esgotar 900 s: o resultado "timeout" mede o limite, não a capacidade'
         default: '900'
+      temperature:
+        description: 'Temperatura de amostragem (vazio = a do catálogo, 0). Com 0 as repetições são quase idênticas: para repetições controladas usar > 0 com seed_base'
+        default: ''
+      seed_base:
+        description: 'Semente base; a repetição n usa seed_base + n (registada no relatório). Só tem efeito com temperatura > 0'
+        default: ''
       runner:
         description: 'Runner (ex.: ubuntu-latest, ou um runner maior)'
         default: 'ubuntu-latest'
@@ -52,6 +58,8 @@ jobs:
       CFG: config/models.compare.json
       REPEAT: ${{ inputs.repeat || '1' }}
       MAXIT: ${{ inputs.max_iterations || '15' }}
+      TEMP: ${{ inputs.temperature }}
+      SEEDBASE: ${{ inputs.seed_base }}
       MAXWALL: ${{ inputs.max_wall_seconds || (github.event_name == 'pull_request' && '1800') || '900' }}
       ONLY: ${{ github.event_name == 'pull_request' && 'corrigir-bug' || inputs.only }}
     steps:
@@ -129,6 +137,8 @@ jobs:
           SAMPLER=$!
           ARGS=()
           [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
+          [ -n "$TEMP" ] && ARGS+=(--temperature "$TEMP")
+          [ -n "$SEEDBASE" ] && ARGS+=(--seed-base "$SEEDBASE")
           npx tsx scripts/agent-eval.ts --config "$CFG" --model "${{ matrix.model }}" --mode "${{ matrix.mode }}" \
             --sandbox container --repeat "$REPEAT" --max-iterations "$MAXIT" --max-wall-seconds "$MAXWALL" \
             "${ARGS[@]}" --out "$RUNNER_TEMP/agentes.json" 2>&1 | tee "$RUNNER_TEMP/agentes.txt" || true

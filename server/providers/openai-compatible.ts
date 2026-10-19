@@ -209,6 +209,7 @@ export function createOpenAICompatibleBackend(options: OpenAICompatibleOptions):
               ...toolsToApi(request.tools),
               ...(request.maxOutputTokens ? { max_tokens: request.maxOutputTokens } : {}),
               ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+              ...(request.seed !== undefined ? { seed: request.seed } : {}),
             }),
             signal: combined,
           });
