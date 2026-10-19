@@ -34,7 +34,7 @@ interface Entry {
   statusDetail: string | null;
 }
 
-const SIMULATOR_LIMITS: ModelLimits = { contextTokens: 32_000, maxOutputTokens: 4_096 };
+const SIMULATOR_LIMITS: ModelLimits = { contextTokens: 32_000, maxOutputTokens: 4_096, toolCalling: 'prompted' };
 
 /** O Ollama lista "qwen3:4b"; "qwen3" equivale a "qwen3:latest". */
 function sameModel(upstream: string, listed: string): boolean {
@@ -127,7 +127,7 @@ export function createModelRegistry(options: RegistryOptions): ModelRegistry {
 
     limits(model: string): ModelLimits | undefined {
       const e = entries.get(model);
-      if (e) return { contextTokens: e.config.contextTokens, maxOutputTokens: e.config.maxOutputTokens };
+      if (e) return { contextTokens: e.config.contextTokens, maxOutputTokens: e.config.maxOutputTokens, toolCalling: e.config.toolCalling };
       return options.simulator?.models.some((m) => m.id === model) ? SIMULATOR_LIMITS : undefined;
     },
 

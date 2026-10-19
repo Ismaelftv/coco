@@ -10,7 +10,7 @@
  * - mensagens de erro para o utilizador são genéricas; o detalhe vai para o log.
  */
 import { createSseParser } from '../../shared/sse.ts';
-import type { ChatMessage, FinishReason, Usage } from '../../shared/contract.ts';
+import type { ChatMessage, FinishReason, ToolSpec, Usage } from '../../shared/contract.ts';
 import { estimateTokens } from '../context.ts';
 import { createThinkFilter } from './think-filter.ts';
 import type { BackendRequest, ModelBackend, ProviderEvent } from './types.ts';
@@ -30,16 +30,47 @@ export interface OpenAICompatibleOptions {
   log?: (line: string) => void;
 }
 
-type ApiMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+export type ApiMessage = {
+  role: 'system' | 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_calls?: unknown[];
+  tool_call_id?: string;
+  tool_name?: string;
+};
 
 /**
- * Converte o histórico normalizado para o formato OpenAI. O texto dos anexos
- * vai delimitado e marcado como conteúdo do utilizador (dados, não instruções).
+ * Converte o histórico normalizado para o formato do servidor ("openai" ou
+ * "ollama"; diferem só nas mensagens de ferramentas). O texto dos anexos vai
+ * delimitado e marcado como conteúdo do utilizador (dados, não instruções).
  */
-export function toApiMessages(system: string | undefined, messages: ChatMessage[]): ApiMessage[] {
+export function toApiMessages(
+  system: string | undefined,
+  messages: ChatMessage[],
+  flavor: 'openai' | 'ollama' = 'openai',
+): ApiMessage[] {
   const out: ApiMessage[] = [];
   if (system) out.push({ role: 'system', content: system });
   for (const m of messages) {
+    if (m.role === 'tool') {
+      out.push(
+        flavor === 'openai'
+          ? { role: 'tool', content: m.content, tool_call_id: m.toolCallId ?? '' }
+          : { role: 'tool', content: m.content, tool_name: m.toolName ?? '' },
+      );
+      continue;
+    }
+    if (m.role === 'assistant' && m.toolCalls?.length) {
+      out.push({
+        role: 'assistant',
+        content: m.content,
+        tool_calls: m.toolCalls.map((c) =>
+          flavor === 'openai'
+            ? { id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.arguments ?? {}) } }
+            : { function: { name: c.name, arguments: c.arguments ?? {} } },
+        ),
+      });
+      continue;
+    }
     let content = m.content;
     for (const a of m.attachments ?? []) {
       const name = a.name.replace(/["<>]/g, '_');
@@ -57,8 +88,33 @@ export function mapFinishReason(reason: string | null | undefined): FinishReason
   return reason === 'length' ? 'length' : 'stop';
 }
 
+/** Argumentos JSON de uma chamada; se forem inválidos, devolve o texto para o agente reportar o erro. */
+export function parseToolArguments(raw: unknown): unknown {
+  if (typeof raw !== 'string') return raw ?? {};
+  if (raw.trim() === '') return {};
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return raw;
+  }
+}
+
+export function toolsToApi(tools: ToolSpec[] | undefined) {
+  return tools?.length
+    ? { tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } })) }
+    : {};
+}
+
 interface ChunkJson {
-  choices?: { delta?: { content?: string | null; reasoning_content?: string | null; reasoning?: string | null }; finish_reason?: string | null }[];
+  choices?: {
+    delta?: {
+      content?: string | null;
+      reasoning_content?: string | null;
+      reasoning?: string | null;
+      tool_calls?: { index?: number; id?: string; function?: { name?: string; arguments?: string } }[];
+    };
+    finish_reason?: string | null;
+  }[];
   usage?: { prompt_tokens?: number; completion_tokens?: number } | null;
   error?: { message?: string } | string;
 }
@@ -123,6 +179,8 @@ export function createOpenAICompatibleBackend(options: OpenAICompatibleOptions):
       let finish: FinishReason = 'stop';
       let usage: Usage | null = null;
       const think = createThinkFilter();
+      // Fragmentos de chamadas de ferramentas, agrupados por índice até ao fim do stream.
+      const pendingCalls = new Map<number, { id: string; name: string; args: string }>();
 
       const cancelled = (): ProviderEvent => ({
         type: 'end',
@@ -148,8 +206,10 @@ export function createOpenAICompatibleBackend(options: OpenAICompatibleOptions):
               messages,
               stream: true,
               stream_options: { include_usage: true },
+              ...toolsToApi(request.tools),
               ...(request.maxOutputTokens ? { max_tokens: request.maxOutputTokens } : {}),
               ...(request.temperature !== undefined ? { temperature: request.temperature } : {}),
+              ...(request.seed !== undefined ? { seed: request.seed } : {}),
             }),
             signal: combined,
           });
@@ -208,6 +268,14 @@ export function createOpenAICompatibleBackend(options: OpenAICompatibleOptions):
                 yield { type: 'delta', text: split.content };
               }
             }
+            for (const tc of choice?.delta?.tool_calls ?? []) {
+              const idx = tc.index ?? 0;
+              const cur = pendingCalls.get(idx) ?? { id: tc.id ?? `call_${idx}`, name: '', args: '' };
+              if (tc.id) cur.id = tc.id;
+              if (tc.function?.name) cur.name += tc.function.name;
+              if (tc.function?.arguments) cur.args += tc.function.arguments;
+              pendingCalls.set(idx, cur);
+            }
             if (choice?.finish_reason) finish = mapFinishReason(choice.finish_reason);
             if (json.usage && typeof json.usage.completion_tokens === 'number') {
               usage = {
@@ -225,6 +293,9 @@ export function createOpenAICompatibleBackend(options: OpenAICompatibleOptions):
           yield { type: 'delta', text: rest.content };
         }
         if (signal.aborted) return yield cancelled();
+        for (const [, c] of [...pendingCalls].sort((a, b) => a[0] - b[0])) {
+          yield { type: 'tool_call', call: { id: c.id, name: c.name, arguments: parseToolArguments(c.args) } };
+        }
         yield {
           type: 'end',
           finishReason: finish,

@@ -1,4 +1,4 @@
-import type { ChatMessage, FinishReason, ModelInfo, Usage } from '../../shared/contract.ts';
+import type { ChatMessage, FinishReason, ModelInfo, ToolCall, ToolSpec, Usage } from '../../shared/contract.ts';
 
 /** Pedido normalizado, independente do fornecedor. */
 export interface ProviderRequest {
@@ -10,12 +10,18 @@ export interface ProviderRequest {
   /** Limite de tokens gerados; o registo aplica o máximo configurado para o modelo. */
   maxOutputTokens?: number;
   temperature?: number;
+  /** Semente de amostragem (repetições controladas); só tem efeito com temperatura > 0. */
+  seed?: number;
+  /** Ferramentas oferecidas ao modelo (só em modelos com chamada nativa). */
+  tools?: ToolSpec[];
 }
 
 export type ProviderEvent =
   | { type: 'delta'; text: string }
   /** Raciocínio interno do modelo ("thinking"): não é mostrado como resposta. */
   | { type: 'reasoning'; text: string }
+  /** O modelo pediu a execução de uma ferramenta (chamada nativa). */
+  | { type: 'tool_call'; call: ToolCall }
   | { type: 'end'; finishReason: FinishReason; usage: Usage }
   | { type: 'error'; code: string; message: string; retryable: boolean };
 
@@ -23,6 +29,8 @@ export type ProviderEvent =
 export interface ModelLimits {
   contextTokens: number;
   maxOutputTokens: number;
+  /** Como o modelo pede ferramentas: protocolo nativo do servidor ou protocolo textual da Forja. */
+  toolCalling: 'native' | 'prompted';
 }
 
 /**

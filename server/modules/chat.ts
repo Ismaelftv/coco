@@ -172,7 +172,7 @@ export function registerChat(
 
       // Orçamento: janela do modelo − resposta máxima − prompt de sistema, com margem
       // de 10% porque a contagem é estimada (≈4 caracteres por token).
-      const limits = provider.limits?.(model.id) ?? { contextTokens: 32_000, maxOutputTokens: 4_096 };
+      const limits = provider.limits?.(model.id) ?? { contextTokens: 32_000, maxOutputTokens: 4_096, toolCalling: 'prompted' as const };
       const system = model.hosting === 'simulated' ? undefined : buildSystemPrompt(model);
       const budget = Math.max(
         1_000,
@@ -224,8 +224,8 @@ export function registerChat(
     try {
       const request = { model: job.modelId, messages: job.history, ...(job.system ? { system: job.system } : {}) };
       for await (const ev of provider.stream(request, controller.signal)) {
-        if (ev.type === 'reasoning') {
-          // O raciocínio interno não é mostrado nem guardado nesta fase.
+        if (ev.type === 'reasoning' || ev.type === 'tool_call') {
+          // Raciocínio interno não é mostrado nem guardado; o chat não oferece ferramentas.
           continue;
         } else if (ev.type === 'delta') {
           content += ev.text;

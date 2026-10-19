@@ -1,0 +1,7 @@
+{
+  "state": "ok",
+  "reason": "CI do GitHub a correr no repositório público Ismaelftv/coco",
+  "since": "2026-10-19",
+  "lastVerifiedBy": "runs do commit d327301: CI, Isolamento da sandbox (3 variantes) e Modelo local (Ollama) concluídos com sucesso",
+  "note": "CI do GitHub: unit 56/56, integração 200/203 (3 ignorados), E2E 13/13, auditoria npm sem falhas ≥ high, fronteiras 40-42/43 por variante (1-3 ignorados). Runners de 4 vCPU no repositório público."
+}

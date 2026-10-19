@@ -1,0 +1,45 @@
+{
+  "_comentario": "Configuração da avaliação comparativa de agentes. Mesmo contexto, limite de saída e temperatura para todos os modelos. As licenças dos modelos Coder NÃO estão confirmadas aqui: o workflow imprime `ollama show --license` do modelo descarregado e a capacidade de ferramentas vem de /api/show.",
+  "backends": [{ "id": "ollama-cmp", "kind": "ollama", "baseUrl": "http://127.0.0.1:11434", "hosting": "self-hosted", "headersTimeoutMs": 600000, "idleTimeoutMs": 600000 }],
+  "models": [
+    {
+      "id": "qwen3-4b-cmp",
+      "label": "Qwen3 4B",
+      "description": "Candidato generalista pequeno (referência da comparação).",
+      "backend": "ollama-cmp",
+      "upstreamModel": "qwen3:4b",
+      "author": "Alibaba (Qwen)",
+      "license": "Apache-2.0",
+      "contextTokens": 16384,
+      "maxOutputTokens": 1536,
+      "temperature": 0,
+      "toolCalling": "native"
+    },
+    {
+      "id": "qwen25-coder-7b-cmp",
+      "label": "Qwen2.5-Coder 7B",
+      "description": "Modelo especializado em código, ainda cabe em CPU (~4,7 GB quantizado).",
+      "backend": "ollama-cmp",
+      "upstreamModel": "qwen2.5-coder:7b",
+      "author": "Alibaba (Qwen)",
+      "license": "Apache-2.0 (cabeçalho lido no modelo instalado; texto completo por conferir)",
+      "contextTokens": 16384,
+      "maxOutputTokens": 1536,
+      "temperature": 0,
+      "toolCalling": "native"
+    },
+    {
+      "id": "qwen3-coder-30b-cmp",
+      "label": "Qwen3-Coder 30B",
+      "description": "Só para máquinas com GPU/RAM grandes (~19 GB quantizado); não cabe nos runners da CI.",
+      "backend": "ollama-cmp",
+      "upstreamModel": "qwen3-coder:30b",
+      "author": "Alibaba (Qwen)",
+      "license": "a confirmar (ollama show --license)",
+      "contextTokens": 32768,
+      "maxOutputTokens": 2048,
+      "temperature": 0,
+      "toolCalling": "native"
+    }
+  ]
+}

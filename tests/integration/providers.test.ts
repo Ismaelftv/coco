@@ -91,6 +91,41 @@ for (const [name, make] of backends) {
       assert.equal(fake.requests.at(-1)!.aborted, true);
     });
 
+    test('chamada de ferramenta nativa → evento tool_call com argumentos em objeto', async () => {
+      const tools = [{ name: 'read_file', description: 'Lê', parameters: { type: 'object', properties: { path: { type: 'string' } } } }];
+      const { events } = await collect(make().stream(req('#ferramenta', { tools }), new AbortController().signal));
+      const calls = events.filter((e) => e.type === 'tool_call');
+      assert.equal(calls.length, 1);
+      const call = (calls[0] as { call: { name: string; arguments: unknown; id: string } }).call;
+      assert.equal(call.name, 'read_file');
+      assert.deepEqual(call.arguments, { path: 'src/a.js' });
+      assert.ok(call.id);
+      assert.equal(events.at(-1)?.type, 'end');
+      const sent = fake.requests.at(-1)!.body as { tools?: { type: string; function: { name: string } }[] };
+      assert.equal(sent.tools?.[0]?.type, 'function');
+      assert.equal(sent.tools?.[0]?.function.name, 'read_file');
+    });
+
+    test('histórico com chamadas e resultados de ferramentas no formato do servidor', async () => {
+      const messages = [
+        { role: 'user' as const, content: 'lê' },
+        { role: 'assistant' as const, content: '', toolCalls: [{ id: 'call_1', name: 'read_file', arguments: { path: 'a' } }] },
+        { role: 'tool' as const, content: 'conteúdo', toolCallId: 'call_1', toolName: 'read_file' },
+      ];
+      await collect(make().stream(req('', { messages }), new AbortController().signal));
+      const sent = (fake.requests.at(-1)!.body as { messages: Record<string, unknown>[] }).messages;
+      const asst = sent.find((m) => m.role === 'assistant')!;
+      const tool = sent.find((m) => m.role === 'tool')!;
+      const fn = (asst.tool_calls as { function: { arguments: unknown } }[])[0]!.function;
+      if (fake.requests.at(-1)!.path === '/api/chat') {
+        assert.deepEqual(fn.arguments, { path: 'a' }); // Ollama: objeto
+        assert.equal(tool.tool_name, 'read_file');
+      } else {
+        assert.equal(fn.arguments, '{"path":"a"}'); // OpenAI: texto JSON
+        assert.equal(tool.tool_call_id, 'call_1');
+      }
+    });
+
     test('lista os modelos instalados no servidor', async () => {
       assert.deepEqual(await make().listUpstreamModels(new AbortController().signal), ['qwen3:4b', 'outro:1b']);
     });
@@ -171,7 +206,7 @@ describe('registo de modelos', () => {
     const r = await collect(registry.stream({ model: 'qwen3-4b', messages: [{ role: 'user', content: 'olá' }], maxOutputTokens: 99_999 }, new AbortController().signal));
     assert.match(r.text, /Resposta do modelo de teste/);
     assert.equal((fake.requests.at(-1)!.body.options as { num_predict: number }).num_predict, 1024, 'teto do catálogo aplicado');
-    assert.deepEqual(registry.limits?.('qwen3-4b'), { contextTokens: 8192, maxOutputTokens: 1024 });
+    assert.deepEqual(registry.limits?.('qwen3-4b'), { contextTokens: 8192, maxOutputTokens: 1024, toolCalling: 'prompted' });
     const sim = await collect(registry.stream({ model: 'forja-sim', messages: [{ role: 'user', content: 'olá' }] }, new AbortController().signal));
     assert.match(sim.text, /Resposta simulada/);
     const unknown = await collect(registry.stream({ model: 'nada', messages: [] }, new AbortController().signal));

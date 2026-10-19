@@ -59,6 +59,11 @@ export const modelSchema = z.object({
   temperature: z.number().min(0).max(2).optional(),
   /** Raciocínio explícito ("thinking"). Desligado por defeito: em CPU consome muito tempo e tokens. */
   think: z.boolean().default(false),
+  /**
+   * `native`: usa o suporte de ferramentas do servidor (Ollama `tools`; vLLM com
+   * --enable-auto-tool-choice). `prompted`: protocolo JSON da Forja, funciona com qualquer modelo.
+   */
+  toolCalling: z.enum(['native', 'prompted']).default('prompted'),
 });
 
 export const catalogSchema = z

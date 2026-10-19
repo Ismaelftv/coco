@@ -193,10 +193,30 @@ export interface ModelInfo {
 
 /** Mensagem normalizada enviada a um fornecedor de modelos. */
 export interface ChatMessage {
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'tool';
   content: string;
   /** `content` só é preenchido para texto; imagens/PDF vão sem conteúdo até haver modelo multimodal. */
   attachments?: { name: string; mediaType: string; content: string; size?: number }[];
+  /** Mensagem do assistente: ferramentas pedidas pelo modelo (chamada nativa). */
+  toolCalls?: ToolCall[];
+  /** Mensagem `tool`: a que chamada e ferramenta responde. */
+  toolCallId?: string;
+  toolName?: string;
+}
+
+/** Pedido de execução de ferramenta feito por um modelo. */
+export interface ToolCall {
+  id: string;
+  name: string;
+  /** Objeto de argumentos; texto em bruto se o modelo enviou JSON inválido. */
+  arguments: unknown;
+}
+
+/** Descrição de uma ferramenta entregue ao modelo (JSON Schema nos parâmetros). */
+export interface ToolSpec {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
 }
 
 export interface ApiError {

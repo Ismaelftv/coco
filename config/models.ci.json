@@ -1,5 +1,12 @@
 {
-  "backends": [{ "id": "ollama-ci", "kind": "ollama", "baseUrl": "http://127.0.0.1:11434", "hosting": "self-hosted" }],
+  "backends": [
+    {
+      "id": "ollama-ci",
+      "kind": "ollama",
+      "baseUrl": "http://127.0.0.1:11434",
+      "hosting": "self-hosted"
+    }
+  ],
   "models": [
     {
       "id": "qwen3-0-6b-ci",
@@ -11,7 +18,21 @@
       "license": "Apache-2.0",
       "contextTokens": 4096,
       "maxOutputTokens": 256,
-      "temperature": 0
+      "temperature": 0,
+      "toolCalling": "native"
+    },
+    {
+      "id": "qwen3-1-7b-ci",
+      "label": "Qwen3 1.7B",
+      "description": "Modelo pequeno para avaliar agentes na CI (não para qualidade).",
+      "backend": "ollama-ci",
+      "upstreamModel": "qwen3:1.7b",
+      "author": "Alibaba (Qwen)",
+      "license": "Apache-2.0",
+      "contextTokens": 8192,
+      "maxOutputTokens": 1024,
+      "temperature": 0,
+      "toolCalling": "native"
     }
   ]
 }
