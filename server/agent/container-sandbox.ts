@@ -228,12 +228,30 @@ export class ContainerSandbox implements Sandbox {
       if (quota > 0) void poll();
       child.stdout.setEncoding('utf8').on('data', (d: string) => out.push(d));
       child.stderr.setEncoding('utf8').on('data', (d: string) => err.push(d));
-      const finish = (exitCode: number | null, signal: string | null, extraErr?: string) => {
+      const finish = async (exitCode: number | null, signal: string | null, extraErr?: string) => {
         clearTimeout(timer);
         watching = false;
         o.signal?.removeEventListener('abort', onAbort);
         // Garante que não fica nada a correr (idempotente se o contentor já saiu).
         spawnSync(this.engine, ['rm', '-f', name], { timeout: 10_000, stdio: 'ignore' });
+        if (timedOut || cancelled || quotaExceeded || extraErr) {
+          // Se o limite chegou enquanto o motor ainda criava/arrancava o contentor, o `kill`/`rm` iniciais
+          // podem ter corrido ANTES de ele existir e um contentor criado tarde ficaria a correr.
+          // Repetir a remoção até o nome estar ausente durante 1 s seguido (máx. 5 s).
+          const end = Date.now() + 5_000;
+          let absentSince: number | null = null;
+          while (Date.now() < end) {
+            const ps = spawnSync(this.engine, ['ps', '-aq', '--filter', `name=^${name}$`], { encoding: 'utf8', timeout: 10_000 });
+            if ((ps.stdout ?? '').trim() === '') {
+              absentSince ??= Date.now();
+              if (Date.now() - absentSince >= 1_000) break;
+            } else {
+              absentSince = null;
+              spawnSync(this.engine, ['rm', '-f', name], { timeout: 10_000, stdio: 'ignore' });
+            }
+            await new Promise((r) => setTimeout(r, 150));
+          }
+        }
         if (extraErr) err.push(extraErr);
         resolvePromise({
           // 137 = SIGKILL (inclui o OOM killer) → tratado como terminado por sinal.
@@ -249,8 +267,8 @@ export class ContainerSandbox implements Sandbox {
           ...(quotaExceeded ? { quotaExceeded: true } : {}),
         });
       };
-      child.on('error', (e) => finish(null, null, `Falha ao iniciar o motor de contentores: ${e.message}`));
-      child.on('close', (code, sig) => finish(code, sig));
+      child.on('error', (e) => void finish(null, null, `Falha ao iniciar o motor de contentores: ${e.message}`));
+      child.on('close', (code, sig) => void finish(code, sig));
     });
   }
 }

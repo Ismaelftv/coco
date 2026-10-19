@@ -204,6 +204,20 @@ describe('contentor: fronteiras individuais', () => {
     assert.equal(o.nnp, '1');
   });
 
+  test('tempo limite MUITO curto (antes de o contentor existir): não fica nenhum contentor órfão', async (t) => {
+    const c = need(t);
+    if (!c) return;
+    // 40 ms é menos do que o tempo de arranque do contentor: o `kill` chega antes de ele existir.
+    for (let i = 0; i < 3; i++) {
+      const r = await sh(c, 'setInterval(() => {}, 1000)', 40);
+      assert.equal(r.timedOut, true);
+    }
+    await new Promise((res) => setTimeout(res, 2_500)); // um contentor criado tarde apareceria agora
+    const engine = detectContainerEngine();
+    const ps = spawnSync(engine.available ? engine.engine : 'docker', ['ps', '--filter', 'name=forja-sbx-', '--format', '{{.Names}}'], { encoding: 'utf8' });
+    assert.equal(ps.stdout.trim(), '', 'ficou um contentor a correr depois de um tempo limite durante o arranque');
+  });
+
   test('tempo limite: o contentor é realmente parado (nada fica a correr)', async (t) => {
     const c = need(t);
     if (!c) return;
