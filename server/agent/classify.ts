@@ -9,7 +9,8 @@ import type { AgentReport } from './loop.ts';
 export type Outcome =
   | 'success'
   | 'timeout' // limite de tempo ou de tokens esgotado (em CPU mede o hardware, não só o modelo)
-  | 'tool_failure' // o modelo tentou alterar e a ferramenta recusou/falhou, e não houve alterações
+  | 'edit_refused' // o modelo tentou alterar, a ferramenta RECUSOU corretamente (ambiguidade, contexto desatualizado, parâmetros inconsistentes) e o modelo não resolveu; nada foi alterado
+  | 'tool_failure' // a ferramenta FALHOU (E/S, verificação após escrita, erro interno) e não houve alterações
   | 'model_no_action' // sem alterações e sem tentativas de escrita recusadas
   | 'tests_failed' // houve alterações mas os testes (critério de execução) falham
   | 'integrity_violation' // os testes passam mas um critério de integridade falhou (p. ex. testes alterados)
@@ -22,6 +23,8 @@ export interface OutcomeInfo {
 }
 
 const WRITE_TOOLS = new Set(['edit_file', 'write_file', 'delete_file']);
+/** Códigos de recusa legítima: a ferramenta fez o seu trabalho; o que falta é o modelo corrigir o pedido. */
+const REFUSAL_CODES = new Set(['conflict', 'invalid', 'repeated']);
 
 export function classifyOutcome(r: Pick<AgentReport, 'status' | 'stopReason' | 'steps' | 'changedFiles' | 'criteria'>): OutcomeInfo {
   if (r.status === 'succeeded') return { outcome: 'success', detail: 'critérios de execução cumpridos e verificados pelo sistema' };
@@ -33,7 +36,8 @@ export function classifyOutcome(r: Pick<AgentReport, 'status' | 'stopReason' | '
   if (!changed) {
     if (writeFailures.length > 0) {
       const codes = [...new Set(writeFailures.map((s) => `${s.tool}:${s.errorCode ?? '?'}`))].join(', ');
-      return { outcome: 'tool_failure', detail: `${writeFailures.length} tentativa(s) de escrita recusadas/falhadas (${codes}) e nenhuma alteração aplicada` };
+      const refusalsOnly = writeFailures.every((s) => REFUSAL_CODES.has(s.errorCode ?? ''));
+      return { outcome: refusalsOnly ? 'edit_refused' : 'tool_failure', detail: `${writeFailures.length} tentativa(s) de escrita ${refusalsOnly ? 'recusadas pela ferramenta' : 'falhadas'} (${codes}) e nenhuma alteração aplicada` };
     }
     return { outcome: 'model_no_action', detail: `sem alterações (${r.stopReason})` };
   }

@@ -115,6 +115,26 @@ describe('zero, uma e várias ocorrências', () => {
     assert.equal(await c.disk(), CALC);
   });
 
+  test('caso do piloto v3: `line` com `expectedMatches: 1` falso é recusado, a mensagem diz como corrigir, e a versão corrigida aplica', async () => {
+    const { edit, disk } = await setup();
+    const mau = await edit({ ...FIX, line: 6, expectedMatches: 1 });
+    assert.equal(mau.ok, false);
+    assert.equal(mau.errorCode, 'conflict');
+    assert.match(mau.content, /tem agora 2 \(linhas 2, 6\)/);
+    assert.match(mau.content, /podes omiti-lo; se o indicares, tem de ser 2, não 1/);
+    assert.equal(await disk(), CALC, 'a recusa não alterou nada');
+    const sem = await edit({ ...FIX, line: 6 });
+    assert.equal(sem.ok, true, sem.content);
+    assert.equal((await disk()).split('\n')[5], '  return a - b;');
+  });
+
+  test('`line` com `expectedMatches` correto (2) também aplica', async () => {
+    const { edit, disk } = await setup();
+    const ok = await edit({ ...FIX, line: 6, expectedMatches: 2 });
+    assert.equal(ok.ok, true, ok.content);
+    assert.equal((await disk()).split('\n')[1], '  return a + b;', 'a outra ocorrência ficou');
+  });
+
   test('`line` sem ocorrência nessa linha, `line` e `occurrence` juntos: recusados', async () => {
     const { edit, disk } = await setup();
     const sem = await edit({ ...FIX, line: 3 });

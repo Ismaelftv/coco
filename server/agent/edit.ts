@@ -161,7 +161,12 @@ export function planEdit(rel: string, text: string, req: EditRequest): EditPlan 
   const how = `Repete edit_file com \`line\` (linha onde o excerto começa) ou com \`occurrence\` + \`expectedMatches: ${occs.length}\`; inclui \`version: "${ver}"\` para garantir que o ficheiro não mudou.`;
   let chosen: Occurrence;
   if (req.expectedMatches !== undefined && req.expectedMatches !== occs.length) {
-    throw new ToolError(`Esperavas ${req.expectedMatches} ocorrência(s) mas "${rel}" tem agora ${occs.length}. Nada foi alterado.\n${describeOccurrences(text, occs)}\n${how}`, 'conflict');
+    const lines = occs.map((o) => o.line).join(', ');
+    throw new ToolError(
+      `Esperavas ${req.expectedMatches} ocorrência(s) mas "${rel}" tem agora ${occs.length} (linhas ${lines}). Nada foi alterado.\n${describeOccurrences(text, occs)}\n${how}\n` +
+        `\`expectedMatches\` só confirma a contagem: se usas \`line\`, podes omiti-lo; se o indicares, tem de ser ${occs.length}, não ${req.expectedMatches}.`,
+      'conflict',
+    );
   }
   if (req.line !== undefined) {
     const atLine = occs.filter((o) => o.line === req.line);

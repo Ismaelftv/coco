@@ -38,7 +38,7 @@ Velocidade de geração observada: 0,6 tok/s (7B), 1,5–1,9 tok/s (4B). A métr
 - **Coder 7B prompted — sucesso.** Executou os testes, localizou `subtrair`, tentou `edit_file` sem seleção e foi **recusado** com as duas ocorrências (linhas 2 e 6) e contexto. Repetiu com `line: 6` e `version` e a edição foi aplicada e reaberta; os testes passaram. É exatamente o fluxo desenhado para P1.
 - **Coder 7B native — falha classificada como `tool_failure`, mas a causa é mista.** O modelo pediu `edit_file` com `expectedMatches: 1`; o ficheiro tem 2 ocorrências, pelo que a ferramenta recusou e mostrou-as. Nas tentativas seguintes o modelo acrescentou `line: 6` mas **manteve `expectedMatches: 1`**, e foi recusado de novo (3 recusas e 1 "repetida"). Nunca alterou o ficheiro; terminou sem correção. A ferramenta recusou corretamente (o modelo declarou uma unicidade falsa), mas:
   - o classificador chama "falha de ferramenta" a algo em que o modelo não corrigiu o seu próprio parâmetro; a etiqueta é imprecisa e deve distinguir "recusa legítima não resolvida" de "erro da ferramenta";
-  - a mensagem de erro não diz explicitamente "remove `expectedMatches` ou põe-no a 2 quando usas `line`", o que é uma fragilidade de usabilidade plausível. **Não foi alterada neste PR** para não misturar versões de ferramentas; fica como candidata a `toolsVersion 3`.
+  - a mensagem de erro não diz explicitamente "remove `expectedMatches` ou põe-no a 2 quando usas `line`", o que é uma fragilidade de usabilidade plausível. Este piloto **não foi alterado**; as duas melhorias (mensagem e etiqueta `edit_refused`) foram feitas depois, em `toolsVersion 3`, e qualquer novo piloto com essa versão é publicado à parte. Os resultados acima mantêm a etiqueta `tool_failure` original.
 - **Qwen3 4B (ambos os modos) — timeout.** Executou os testes e leu `src/calc.js` em 3 iterações e o tempo esgotou-se durante a geração seguinte. **Nunca chegou ao `edit_file`**, portanto este piloto não diz nada sobre a correção da ferramenta para este modelo. O limite foi tempo de geração em CPU (1,5–1,9 tok/s, com ~2,7–3,4 mil tokens gerados, incluindo texto de plano em formato de raciocínio).
 
 ## Comparação com o piloto `toolsVersion 1` (não somar)
@@ -55,7 +55,7 @@ No piloto v1 todas as variantes falhavam por `edit_file` recusar uma substituiç
 
 ## Próximo passo (preparado, não lançado)
 
-Suite completa de seis tarefas, com repetições controladas, seria cara (~3 h de runner por configuração e por repetição). Antes de a lançar, decidir se se faz `toolsVersion 3` (mensagem de erro de `expectedMatches` com `line`; etiqueta de causa mais precisa), porque mudar a ferramenta depois obrigaria a repetir tudo.
+Suite completa de seis tarefas, com repetições controladas, seria cara (~3 h de runner por configuração e por repetição). `toolsVersion 3` já está feito (mensagem de `expectedMatches` com `line`; causa `edit_refused` separada de `tool_failure`); a suite completa deve usá-lo, não o v2.
 
 Comando manual (pelo menos um modelo/tarefa de cada vez):
 

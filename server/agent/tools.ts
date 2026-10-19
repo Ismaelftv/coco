@@ -24,7 +24,7 @@ import type { Sandbox, SandboxResult } from './sandbox.ts';
 import { ToolError, type Workspace } from './workspace.ts';
 
 /** Versão do conjunto de ferramentas: resultados com versões diferentes NÃO se misturam. 2 = edit_file recusa ocorrências ambíguas com lista, seleção por line/occurrence, escrita atómica verificada. */
-export const TOOLS_VERSION = 2;
+export const TOOLS_VERSION = 3;
 
 export type Risk = 'read' | 'write' | 'destructive' | 'execute';
 

@@ -163,10 +163,10 @@ describe('4. a avaliação distingue a causa da falha', () => {
     assert.equal(outcome(report), 'model_no_action');
   });
 
-  test('ferramenta que recusa (ambiguidade) e o modelo desiste → tool_failure, com o código do erro', async () => {
+  test('ferramenta que recusa (ambiguidade) e o modelo desiste → edit_refused (recusa legítima, não falha da ferramenta), com o código', async () => {
     const { report } = await execute('corrigir-bug', [AMBIGUOUS, tool('finish', { summary: 'Não consegui editar.' }), tool('finish', { summary: 'Não consegui editar.' })]);
     const o = classifyOutcome(report);
-    assert.equal(o.outcome, 'tool_failure');
+    assert.equal(o.outcome, 'edit_refused');
     assert.match(o.detail, /edit_file:conflict/);
     assert.equal(report.changedFiles.length, 0, 'a recusa não alterou nada');
   });
