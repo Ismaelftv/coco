@@ -10,6 +10,8 @@ export interface ProviderRequest {
   /** Limite de tokens gerados; o registo aplica o máximo configurado para o modelo. */
   maxOutputTokens?: number;
   temperature?: number;
+  /** Semente de amostragem (repetições controladas); só tem efeito com temperatura > 0. */
+  seed?: number;
   /** Ferramentas oferecidas ao modelo (só em modelos com chamada nativa). */
   tools?: ToolSpec[];
 }

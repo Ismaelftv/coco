@@ -1,0 +1,57 @@
+name: Sandbox com gVisor (avaliação manual)
+
+# Avalia se o runtime gVisor (runsc) por trás do MESMO ContainerSandbox melhora/mantém as fronteiras medidas
+# (rede, ficheiros, segredos, privilégios, limites). É uma avaliação EXPLORATÓRIA, manual, de custo baixo
+# (~10 min). Resultados diferentes do runc são esperados: o gVisor intercepta chamadas ao sistema com um
+# kernel em espaço de utilizador, por isso alguns testes que leem /proc ou cgroups do kernel real podem
+# falhar ou saltar por motivos legítimos. Cada falha é registada, não escondida.
+# NÃO instala nada em produção; a instalação do runsc segue a documentação do gVisor e pode falhar na rede do runner.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gvisor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash -o pipefail -e {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
+      - name: Instalar gVisor (runsc)
+        id: install
+        continue-on-error: true
+        run: |
+          curl -fsSL https://gvisor.dev/archive.key | sudo gpg --dearmor -o /usr/share/keyrings/gvisor-archive-keyring.gpg
+          echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/gvisor-archive-keyring.gpg] https://storage.googleapis.com/gvisor/releases release main" | sudo tee /etc/apt/sources.list.d/gvisor.list > /dev/null
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq runsc
+          sudo runsc install
+          sudo systemctl restart docker
+          echo "::notice title=gvisor::$(runsc --version | head -1)"
+
+      - name: Sonda e testes de fronteira com runtime runsc
+        if: steps.install.outcome == 'success'
+        env:
+          FORJA_SANDBOX_RUNTIME: runsc
+        run: |
+          docker run --rm --runtime runsc node:22-slim node -e "console.log('runsc ok', process.version)"
+          npx tsx scripts/sandbox-probe.ts --label gvisor --out "$RUNNER_TEMP/probe.json" 2>&1 | tee "$RUNNER_TEMP/probe.txt" || true
+          node --import tsx --test tests/integration/sandbox-boundaries.test.ts tests/integration/sandbox-threat-model.test.ts 2>&1 | tee "$RUNNER_TEMP/gv.txt" || true
+          { grep -E '^# (tests|pass|fail|skipped)' "$RUNNER_TEMP/gv.txt" | tr '\n' ' '; } | while read -r l; do echo "::notice title=gvisor testes::$l"; done
+          { grep -E '^\s*not ok' "$RUNNER_TEMP/gv.txt" || true; } | head -10 | while read -r l; do echo "::warning title=gvisor falha::$l"; done
+          { grep -E '# SKIP' "$RUNNER_TEMP/gv.txt" || true; } | head -8 | while read -r l; do echo "::notice title=gvisor saltado::$l"; done
+          { grep -E '✔|✘|nível verificado' "$RUNNER_TEMP/probe.txt" || true; } | head -24 | while read -r l; do echo "::notice title=gvisor sonda::$l"; done
+          python3 scripts/ci-annotate.py gvisor-probe "$RUNNER_TEMP/probe.json" || true
+
+      - name: Instalação falhou
+        if: steps.install.outcome != 'success'
+        run: echo "::warning title=gvisor::a instalação do runsc falhou neste runner; nada foi avaliado"

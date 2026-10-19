@@ -14,13 +14,17 @@
  *    protegidos, e comandos marcados como sensíveis;
  *  - limites: tamanho de leitura e escrita, número de resultados, saída dos comandos.
  */
-import { lstat, mkdir, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { dirname, join, posix } from 'node:path';
 import { z } from 'zod';
 import type { ToolSpec } from '../../shared/contract.ts';
+import { commitAtomic, planEdit, type FileIO } from './edit.ts';
 import { toJsonSchema } from './json-schema.ts';
 import type { Sandbox, SandboxResult } from './sandbox.ts';
 import { ToolError, type Workspace } from './workspace.ts';
+
+/** Versão do conjunto de ferramentas: resultados com versões diferentes NÃO se misturam. 2 = edit_file recusa ocorrências ambíguas com lista, seleção por line/occurrence, escrita atómica verificada. */
+export const TOOLS_VERSION = 3;
 
 export type Risk = 'read' | 'write' | 'destructive' | 'execute';
 
@@ -83,6 +87,8 @@ export interface ToolContext {
   /** Devolve true só se um humano (ou política explícita) autorizar. */
   confirm(request: ConfirmationRequest): Promise<boolean>;
   signal: AbortSignal;
+  /** Acesso a ficheiros (injetável nos testes para simular falhas de escrita). */
+  io?: FileIO | undefined;
 }
 
 export interface ToolOutput {
@@ -157,6 +163,15 @@ async function readText(ctx: ToolContext, path: string): Promise<{ rel: string; 
   const buf = await readFile(abs);
   if (isBinary(buf)) throw new ToolError(`"${rel}" é um ficheiro binário.`, 'invalid');
   return { rel, abs, text: buf.toString('utf8') };
+}
+
+/** Leitura para edição: devolve também o buffer original e recusa o que não é UTF-8 válido (a reescrita corromperia bytes). */
+async function readTextRaw(ctx: ToolContext, path: string): Promise<{ buf: Buffer; text: string }> {
+  const { abs, rel } = await ctx.ws.resolve(path, 'read');
+  const r = await readText(ctx, rel);
+  const buf = await readFile(abs);
+  if (!Buffer.from(r.text, 'utf8').equals(buf)) throw new ToolError(`"${rel}" não é UTF-8 válido: não é seguro editá-lo como texto.`, 'invalid');
+  return { buf, text: r.text };
 }
 
 async function guardWrite(ctx: ToolContext, tool: string, rel: string, details: string, risk: Risk = 'write'): Promise<void> {
@@ -303,27 +318,25 @@ const projectInfo: ToolDefinition = {
 const editFile: ToolDefinition = {
   name: 'edit_file',
   risk: 'write',
-  description: 'Substitui um excerto exato de um ficheiro por outro. oldText tem de aparecer exatamente uma vez (inclui espaços e indentação); lê o ficheiro antes.',
+  description:
+    'Substitui um excerto exato de um ficheiro por outro. Se oldText aparecer mais de uma vez a edição é RECUSADA (nada é alterado) e recebes as linhas e o contexto de cada ocorrência: repete então com `line` (linha onde o excerto começa) ou com `occurrence` + `expectedMatches`. Se oldText não existir, nada é alterado. O ficheiro é escrito de forma atómica e verificado ao reabrir.',
   schema: z.object({
     path: path('Ficheiro a alterar.'),
     oldText: z.string().min(1).max(20_000).describe('Texto atual, copiado exatamente do ficheiro.'),
     newText: z.string().max(50_000).describe('Texto novo.'),
+    line: z.number().int().min(1).optional().describe('Só quando oldText aparece várias vezes: linha (1-based) onde começa a ocorrência pretendida.'),
+    occurrence: z.number().int().min(1).optional().describe('Alternativa a line: número da ocorrência (1-based) na lista devolvida; exige expectedMatches.'),
+    expectedMatches: z.number().int().min(1).optional().describe('Número de ocorrências que viste na lista; a edição é recusada se o ficheiro já não tiver este número.'),
+    version: z.string().max(40).optional().describe('Versão do ficheiro devolvida na lista de ocorrências; a edição é recusada se o ficheiro mudou.'),
   }),
-  async run(args: { path: string; oldText: string; newText: string }, ctx) {
-    const { rel } = await ctx.ws.resolve(args.path, 'write');
-    const { abs, text } = await readText(ctx, rel);
-    // Os modelos copiam muitas vezes o prefixo "  12| " da leitura: retirá-lo.
-    let oldText = args.oldText;
-    if (!text.includes(oldText) && /^\s*\d+\| /m.test(oldText)) oldText = oldText.replace(/^\s*\d+\| /gm, '');
-    const count = text.split(oldText).length - 1;
-    if (count === 0) throw new ToolError(`oldText não existe em "${rel}". Lê o ficheiro de novo e copia o texto exato.`, 'conflict');
-    if (count > 1) throw new ToolError(`oldText aparece ${count} vezes em "${rel}"; inclui mais contexto para ser único.`, 'conflict');
-    if (oldText === args.newText) throw new ToolError('newText é igual a oldText: não há alteração.', 'invalid');
-    const next = text.replace(oldText, () => args.newText);
-    if (Buffer.byteLength(next) > ctx.limits.writeFileBytes) throw new ToolError('O ficheiro resultante excede o limite de escrita.', 'too_large');
-    await guardWrite(ctx, 'edit_file', rel, `- ${oldText.slice(0, 400)}\n+ ${args.newText.slice(0, 400)}`);
-    await writeFile(abs, next);
-    return ok(`Alteração aplicada em ${rel}.\n${fileDiff(ctx, rel)}`, { changedFiles: [rel] });
+  async run(args: { path: string; oldText: string; newText: string; line?: number | undefined; occurrence?: number | undefined; expectedMatches?: number | undefined; version?: string | undefined }, ctx) {
+    const { abs, rel } = await ctx.ws.resolve(args.path, 'write');
+    const { buf, text } = await readTextRaw(ctx, rel);
+    const plan = planEdit(rel, text, args);
+    if (Buffer.byteLength(plan.next) > ctx.limits.writeFileBytes) throw new ToolError('O ficheiro resultante excede o limite de escrita.', 'too_large');
+    await guardWrite(ctx, 'edit_file', rel, `${rel}:${plan.chosen.line}\n- ${args.oldText.slice(0, 400)}\n+ ${args.newText.slice(0, 400)}`);
+    await commitAtomic(abs, buf, Buffer.from(plan.next, 'utf8'), ctx.io);
+    return ok(`Alteração aplicada em ${rel} (linha ${plan.chosen.line}, ${plan.matches > 1 ? `ocorrência escolhida de ${plan.matches}` : 'única ocorrência'}) e verificada ao reabrir o ficheiro.\n${fileDiff(ctx, rel)}`, { changedFiles: [rel] });
   },
 };
 
@@ -342,9 +355,10 @@ const writeFileTool: ToolDefinition = {
     const existing = await lstat(abs).catch(() => null);
     if (existing && !existing.isFile()) throw new ToolError(`"${rel}" existe e não é um ficheiro.`, 'conflict');
     if (existing && !args.overwrite) throw new ToolError(`"${rel}" já existe. Usa edit_file ou overwrite=true.`, 'conflict');
+    const before = existing ? await readFile(abs) : null;
     await guardWrite(ctx, 'write_file', rel, `${existing ? 'Substituir' : 'Criar'} ${rel} (${Buffer.byteLength(args.content)} bytes)`);
     await mkdir(dirname(abs), { recursive: true });
-    await writeFile(abs, args.content);
+    await commitAtomic(abs, before, Buffer.from(args.content, 'utf8'), ctx.io);
     return ok(`${existing ? 'Substituído' : 'Criado'}: ${rel} (${args.content.split('\n').length} linhas).`, { changedFiles: [rel] });
   },
 };

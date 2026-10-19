@@ -1,0 +1,163 @@
+name: Agentes — comparação de modelos (manual)
+
+# Compara modelos locais no MESMO conjunto de tarefas e critérios
+# (evals/agent/tarefas.json), com a mesma configuração (config/models.compare.json).
+# É manual porque custa minutos de CI: o repositório é privado e os modelos correm em CPU.
+# O código escrito pelo modelo é executado SÓ em contentor (sandbox "strong" verificada).
+# Resultados em categorias separadas (execução, qualidade, injeção, sandbox, custo).
+# Não altera o modelo predefinido: serve de evidência para uma decisão humana.
+#
+# Dispara-se por workflow_dispatch, ou (para um piloto de 1 tarefa) ao pôr a etiqueta
+# "comparar-modelos" num pull request.
+on:
+  pull_request:
+    types: [labeled]
+  workflow_dispatch:
+    inputs:
+      repeat:
+        description: 'Repetições por tarefa'
+        default: '1'
+      only:
+        description: 'Tarefas (ids separados por vírgula; vazio = todas)'
+        default: ''
+      max_iterations:
+        description: 'Máximo de iterações por tarefa'
+        default: '15'
+      max_wall_seconds:
+        description: 'Limite de tempo por execução (s). Em CPU os modelos de 4B+ podem esgotar 900 s: o resultado "timeout" mede o limite, não a capacidade'
+        default: '900'
+      temperature:
+        description: 'Temperatura de amostragem (vazio = a do catálogo, 0). Com 0 as repetições são quase idênticas: para repetições controladas usar > 0 com seed_base'
+        default: ''
+      seed_base:
+        description: 'Semente base; a repetição n usa seed_base + n (registada no relatório). Só tem efeito com temperatura > 0'
+        default: ''
+      runner:
+        description: 'Runner (ex.: ubuntu-latest, ou um runner maior)'
+        default: 'ubuntu-latest'
+
+permissions:
+  contents: read
+
+jobs:
+  comparar:
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'comparar-modelos'
+    runs-on: ${{ inputs.runner || 'ubuntu-latest' }}
+    timeout-minutes: 300
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        model: [qwen3-4b-cmp, qwen25-coder-7b-cmp]
+        mode: [native, prompted]
+    defaults:
+      run:
+        shell: bash -o pipefail -e {0}
+    env:
+      OLLAMA_URL: http://127.0.0.1:11434
+      CFG: config/models.compare.json
+      REPEAT: ${{ inputs.repeat || '1' }}
+      MAXIT: ${{ inputs.max_iterations || '15' }}
+      TEMP: ${{ inputs.temperature }}
+      SEEDBASE: ${{ inputs.seed_base }}
+      MAXWALL: ${{ inputs.max_wall_seconds || (github.event_name == 'pull_request' && '1800') || '900' }}
+      ONLY: ${{ github.event_name == 'pull_request' && 'corrigir-bug' || inputs.only }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+
+      - name: Hardware do runner
+        run: |
+          echo "::notice title=hardware ${{ matrix.model }} ${{ matrix.mode }}::$(nproc) CPU; $(free -m | awk '/Mem:/{print $2}') MB RAM; $(df -h / | awk 'NR==2{print $4}') livres; $(lscpu | awk -F: '/Model name/{gsub(/^ +/,"",$2);print $2}')"
+
+      - name: Imagem do contentor (digest)
+        id: imagem
+        run: |
+          if [ -s config/sandbox-image.txt ]; then IMG=$(head -1 config/sandbox-image.txt | tr -d '[:space:]'); else IMG=node:22-slim; fi
+          docker pull -q "$IMG" > /dev/null
+          ID=$(docker image inspect "$IMG" --format '{{.Id}}')
+          DG=$(docker image inspect "$IMG" --format '{{index .RepoDigests 0}}' 2>/dev/null || true)
+          # Usa o digest efetivamente descarregado: o que corre é exatamente o que fica registado.
+          [ -n "$DG" ] && IMG="$DG"
+          echo "FORJA_SANDBOX_IMAGE=$IMG" >> "$GITHUB_ENV"
+          echo "::notice title=imagem ${{ matrix.model }} ${{ matrix.mode }}::$IMG | id $ID | $(docker --version)"
+
+      - name: Porta de validação do instrumento (solução de referência)
+        id: referencia
+        run: |
+          # Sem modelo: prova que a(s) tarefa(s) são possíveis com as ferramentas e que os critérios as reconhecem.
+          ARGS=(); [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
+          if npx tsx scripts/agent-reference.ts --sandbox container "${ARGS[@]}" 2>&1 | tee "$RUNNER_TEMP/ref.txt"; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::error title=referência ${{ matrix.model }} ${{ matrix.mode }}::a solução de referência FALHOU: o instrumento é inválido; os modelos não foram avaliados"
+          fi
+          grep -E '^(✔|✘|Sandbox)' "$RUNNER_TEMP/ref.txt" | head -8 | while read -r l; do echo "::notice title=referência ${{ matrix.model }} ${{ matrix.mode }}::$l"; done
+
+      - name: Instalar e arrancar o Ollama
+        run: |
+          curl -fsSL https://ollama.com/install.sh | sh
+          sudo systemctl stop ollama 2>/dev/null || true
+          nohup ollama serve > "$RUNNER_TEMP/ollama.log" 2>&1 &
+          for i in $(seq 1 30); do curl -sf "$OLLAMA_URL/api/tags" > /dev/null && break; sleep 1; done
+
+      - name: Descarregar o modelo e ler as capacidades
+        id: modelo
+        run: |
+          TAG=$(jq -r --arg id "${{ matrix.model }}" '.models[] | select(.id==$id) | .upstreamModel' "$CFG")
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          START=$(date +%s)
+          ollama pull "$TAG"
+          echo "pull_s=$(( $(date +%s) - START ))" >> "$GITHUB_OUTPUT"
+          SHOW=$(curl -s "$OLLAMA_URL/api/show" -d "{\"model\":\"$TAG\"}")
+          # Licença lida do modelo EFETIVAMENTE instalado (não da documentação): impressão digital do texto completo,
+          # tamanho e linhas identificativas, para poder ser conferida contra a fonte.
+          ollama show "$TAG" --license > "$RUNNER_TEMP/licenca.txt" 2>/dev/null || true
+          LIC_SHA=$(sha256sum "$RUNNER_TEMP/licenca.txt" | cut -c1-16)
+          LIC_BYTES=$(wc -c < "$RUNNER_TEMP/licenca.txt")
+          LIC_LINES=$(grep -m4 -iE 'apache license|version 2\.0|qwen|tongyi|mit license|copyright' "$RUNNER_TEMP/licenca.txt" | sed 's/^ *//' | tr '\n' ';' | head -c 300)
+          DIGEST=$(ollama list | awk -v t="$TAG" '$1==t{print $2}')
+          echo "$SHOW" | jq -c --arg sha "$LIC_SHA" --argjson bytes "$LIC_BYTES" --arg lines "$LIC_LINES" --arg digest "$DIGEST" --arg ollama "$(ollama --version 2>&1 | tail -1)" '{capabilities, details, ollama: $ollama, modelDigest: $digest, license: {sha256_16: $sha, bytes: $bytes, linhas_identificativas: $lines}}' > "$RUNNER_TEMP/show.json"
+          echo "::notice title=modelo $TAG::$(cat "$RUNNER_TEMP/show.json" | head -c 1500) | descarga: $(( $(date +%s) - START )) s | $(ollama list | grep "$TAG" | awk '{print $3,$4}')"
+          if [ "${{ steps.referencia.outputs.ok }}" != "true" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; fi
+          if [ "${{ matrix.mode }}" = "native" ] && ! echo "$SHOW" | jq -e '.capabilities | index("tools")' > /dev/null; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::warning title=saltado ${{ matrix.model }} native::o modelo $TAG NÃO declara a capacidade 'tools' no Ollama; o modo nativo não foi avaliado (usar o modo prompted)."
+          fi
+
+      - name: Avaliação (sandbox em contentor)
+        if: steps.modelo.outputs.skip != 'true'
+        run: |
+          # Amostragem de memória (RAM usada e RSS do Ollama) a cada 5 s durante a avaliação.
+          ( while true; do echo "$(date +%s) $(free -m | awk '/Mem:/{print $3}') $(ps -C ollama -o rss= 2>/dev/null | sort -n | tail -1)" >> "$RUNNER_TEMP/mem.txt"; sleep 5; done ) &
+          SAMPLER=$!
+          ARGS=()
+          [ -n "$ONLY" ] && ARGS+=(--only "$ONLY")
+          [ -n "$TEMP" ] && ARGS+=(--temperature "$TEMP")
+          [ -n "$SEEDBASE" ] && ARGS+=(--seed-base "$SEEDBASE")
+          npx tsx scripts/agent-eval.ts --config "$CFG" --model "${{ matrix.model }}" --mode "${{ matrix.mode }}" \
+            --sandbox container --repeat "$REPEAT" --max-iterations "$MAXIT" --max-wall-seconds "$MAXWALL" \
+            "${ARGS[@]}" --out "$RUNNER_TEMP/agentes.json" 2>&1 | tee "$RUNNER_TEMP/agentes.txt" || true
+          kill $SAMPLER 2>/dev/null || true
+          awk 'BEGIN{u=0;r=0} {if($2>u)u=$2; if($3>r)r=$3} END{printf "pico RAM usada: %d MB; pico RSS do Ollama: %d MB (amostras a cada 5 s)\n", u, r/1024}' "$RUNNER_TEMP/mem.txt" > "$RUNNER_TEMP/mem-resumo.txt" || true
+
+      - name: Resultados completos
+        if: always() && steps.modelo.outputs.skip != 'true'
+        run: |
+          [ -f "$RUNNER_TEMP/mem-resumo.txt" ] && echo "::notice title=memória ${{ matrix.model }} ${{ matrix.mode }}::$(cat "$RUNNER_TEMP/mem-resumo.txt")"
+          [ -f "$RUNNER_TEMP/agentes.json" ] && python3 scripts/ci-annotate.py "cmp-${{ matrix.model }}-${{ matrix.mode }}" "$RUNNER_TEMP/agentes.json" || true
+          python3 scripts/ci-annotate.py "cmp-modelo-${{ matrix.model }}-${{ matrix.mode }}" "$RUNNER_TEMP/show.json" || true
+          sed -n '/══ Resultados/,$p' "$RUNNER_TEMP/agentes.txt" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' | while read -r l; do echo "::notice title=cmp ${{ matrix.model }} ${{ matrix.mode }}::$l"; done
+          grep -E '^(Modelo|Sandbox)' "$RUNNER_TEMP/agentes.txt" | head -2 | while read -r l; do echo "::notice title=cmp ${{ matrix.model }} ${{ matrix.mode }}::$l"; done
+          tail -5 "$RUNNER_TEMP/ollama.log" | grep -iE 'error|oom|killed|out of memory' | while read -r l; do echo "::warning title=ollama ${{ matrix.model }}::$l"; done || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cmp-${{ matrix.model }}-${{ matrix.mode }}
+          path: ${{ runner.temp }}/agentes.json
+          if-no-files-found: ignore

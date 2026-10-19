@@ -36,6 +36,8 @@ npm run test:e2e           # E2E no Chromium contra a aplicação completa
 npm run test:real-model    # com um Ollama real (OLLAMA_URL); corre na CI
 npm run eval -- --config config/models.json --model qwen3-4b-local   # avaliação de um modelo
 npm run check              # tudo
+npm run ci:local           # CI local completa com relatório (Docker; sem GitHub Actions) — docs/09-ci-local.md
+npm run ci:evals           # avaliações caras dos agentes (só mostra o plano sem --yes)
 ```
 
 Os testes de integração e E2E criam e apagam uma base de dados própria em `TEST_DATABASE_URL` (por defeito, o cluster de `npm run db:start`).
@@ -49,3 +51,5 @@ Os testes de integração e E2E criam e apagam uma base de dados própria em `TE
 - [`docs/05-api.md`](docs/05-api.md) — API, modelo de dados, segurança, ADR 0008–0011
 - [`docs/06-modelos.md`](docs/06-modelos.md) — modelos locais, catálogo, hardware, avaliação, ADR 0012–0013
 - [`docs/07-agentes.md`](docs/07-agentes.md) — ferramentas de programação, ciclo de agentes, sandbox, avaliação (Fase 5)
+- [`docs/09-ci-local.md`](docs/09-ci-local.md) — CI local sem GitHub Actions (comandos, relatórios, códigos de saída, `act`, limitações)
+- [`docs/08-isolamento.md`](docs/08-isolamento.md) — garantias de isolamento verificadas (máquina local vs CI), sandbox em contentor, política de confiança

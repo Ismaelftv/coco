@@ -1,0 +1,230 @@
+{
+  "label": "root-sudo",
+  "date": "2026-10-18T22:24:12.433Z",
+  "host": {
+    "uid": "0",
+    "kernel": "6.17.0-1022-azure",
+    "apparmor_restrict_unprivileged_userns": "1",
+    "unprivileged_userns_clone": "1",
+    "max_user_namespaces": "31633",
+    "unshare -n": "ok",
+    "unshare -rn": "ok",
+    "unshare -n -p -f --mount-proc": "ok",
+    "sudo -n": "ok",
+    "setpriv": "ok",
+    "prlimit": "ok",
+    "docker": "ok",
+    "podman": "ok",
+    "bwrap": "n/d (ENOENT)"
+  },
+  "verdicts": [
+    {
+      "sandbox": "process",
+      "level": "process",
+      "checks": [
+        {
+          "id": "rede_loopback",
+          "title": "Não alcança o loopback do servidor",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "BLOQUEADO:ENETUNREACH"
+        },
+        {
+          "id": "rede_externa",
+          "title": "Não alcança o endereço de rede do servidor",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "BLOQUEADO:ENETUNREACH"
+        },
+        {
+          "id": "segredo_0600",
+          "title": "Não lê ficheiro 0600 do utilizador do servidor",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "ERR:EACCES"
+        },
+        {
+          "id": "ambiente_limpo",
+          "title": "Não herda variáveis de ambiente do servidor",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "variável ausente"
+        },
+        {
+          "id": "limites_cpu_ficheiro",
+          "title": "Limites de CPU e tamanho de ficheiro aplicados",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "Max cpu time 120 120 seconds  | Max file size 67108864 67108864 bytes  | Max core file size 0 0 bytes  | Max processes 512 512 processes "
+        },
+        {
+          "id": "espaco_trabalho_gravavel",
+          "title": "Consegue gravar no espaço de trabalho",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "WROTE"
+        },
+        {
+          "id": "fs_servidor_oculto",
+          "title": "Não vê ficheiros do servidor fora do espaço de trabalho",
+          "requiredFor": "strong",
+          "passed": false,
+          "evidence": "LEU ficheiro legível por todos do servidor"
+        },
+        {
+          "id": "fs_servidor_sem_escrita",
+          "title": "Não escreve em diretórios do servidor",
+          "requiredFor": "strong",
+          "passed": true,
+          "evidence": "ERR:EACCES"
+        },
+        {
+          "id": "processos_ocultos",
+          "title": "Não vê os processos do servidor",
+          "requiredFor": "strong",
+          "passed": true,
+          "evidence": "PID do servidor ausente de /proc"
+        },
+        {
+          "id": "memoria_limitada",
+          "title": "Limite de memória (cgroup) aplicado — informativo",
+          "requiredFor": "info",
+          "passed": false,
+          "evidence": "ERR:ENOENT"
+        },
+        {
+          "id": "processos_limitados",
+          "title": "Limite de processos (cgroup) aplicado — informativo",
+          "requiredFor": "info",
+          "passed": false,
+          "evidence": "ERR:ENOENT"
+        },
+        {
+          "id": "sem_root",
+          "title": "Não corre como root",
+          "requiredFor": "strong",
+          "passed": true,
+          "evidence": "uid 65534"
+        }
+      ],
+      "contradictions": [],
+      "probedAt": "2026-10-18T22:24:12.035Z",
+      "declared": {
+        "kind": "process",
+        "network": "isolated",
+        "user": "unprivileged",
+        "pidNamespace": true,
+        "filesystem": "shared_host",
+        "resourceLimits": true,
+        "envScrubbed": true,
+        "notes": [
+          "Sistema de ficheiros do servidor visível (só leitura do que o utilizador do comando puder ler). Isolamento de processo, não de máquina."
+        ]
+      }
+    },
+    {
+      "sandbox": "container:docker",
+      "level": "strong",
+      "checks": [
+        {
+          "id": "rede_loopback",
+          "title": "Não alcança o loopback do servidor",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "BLOQUEADO:ECONNREFUSED"
+        },
+        {
+          "id": "rede_externa",
+          "title": "Não alcança o endereço de rede do servidor",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "BLOQUEADO:ENETUNREACH"
+        },
+        {
+          "id": "segredo_0600",
+          "title": "Não lê ficheiro 0600 do utilizador do servidor",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "ERR:ENOENT"
+        },
+        {
+          "id": "ambiente_limpo",
+          "title": "Não herda variáveis de ambiente do servidor",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "variável ausente"
+        },
+        {
+          "id": "limites_cpu_ficheiro",
+          "title": "Limites de CPU e tamanho de ficheiro aplicados",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "Max cpu time 120 120 seconds  | Max file size 67108864 67108864 bytes  | Max core file size 0 0 bytes  | Max processes unlimited unlimited processes "
+        },
+        {
+          "id": "espaco_trabalho_gravavel",
+          "title": "Consegue gravar no espaço de trabalho",
+          "requiredFor": "process",
+          "passed": true,
+          "evidence": "WROTE"
+        },
+        {
+          "id": "fs_servidor_oculto",
+          "title": "Não vê ficheiros do servidor fora do espaço de trabalho",
+          "requiredFor": "strong",
+          "passed": true,
+          "evidence": "ERR:ENOENT"
+        },
+        {
+          "id": "fs_servidor_sem_escrita",
+          "title": "Não escreve em diretórios do servidor",
+          "requiredFor": "strong",
+          "passed": true,
+          "evidence": "ERR:ENOENT"
+        },
+        {
+          "id": "processos_ocultos",
+          "title": "Não vê os processos do servidor",
+          "requiredFor": "strong",
+          "passed": true,
+          "evidence": "PID do servidor ausente de /proc"
+        },
+        {
+          "id": "memoria_limitada",
+          "title": "Limite de memória (cgroup) aplicado — informativo",
+          "requiredFor": "info",
+          "passed": true,
+          "evidence": "memory.max=1073741824"
+        },
+        {
+          "id": "processos_limitados",
+          "title": "Limite de processos (cgroup) aplicado — informativo",
+          "requiredFor": "info",
+          "passed": true,
+          "evidence": "pids.max=256"
+        },
+        {
+          "id": "sem_root",
+          "title": "Não corre como root",
+          "requiredFor": "strong",
+          "passed": true,
+          "evidence": "uid 65534"
+        }
+      ],
+      "contradictions": [],
+      "probedAt": "2026-10-18T22:24:12.118Z",
+      "declared": {
+        "kind": "container",
+        "network": "isolated",
+        "user": "unprivileged",
+        "pidNamespace": true,
+        "filesystem": "container_private",
+        "resourceLimits": true,
+        "envScrubbed": true,
+        "notes": [
+          "Imagem node:22-slim. Kernel partilhado com o servidor: não protege contra exploits de kernel (microVM seria mais forte)."
+        ]
+      }
+    }
+  ]
+}

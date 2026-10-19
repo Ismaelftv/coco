@@ -1,0 +1,448 @@
+{
+  "suite": "agentes-basico",
+  "suiteVersion": 3,
+  "config": {
+    "commit": "11b546f3787b5588dd9267108971bee6fb2441f3",
+    "toolsVersion": 2,
+    "suiteSha256": "74f6340862bf1827b10013a96f1c5981baa600070ccae10ac67b347c7a285bb9",
+    "repeat": 1,
+    "maxIterations": 15,
+    "maxWallSeconds": 1800,
+    "sandboxImage": {
+      "ref": "node@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392",
+      "id": "sha256:d0a16be756b6ec6658aecb8b7bcf87fa6c7d0d7fcc6ca53ad14bb49a4c90bdd7",
+      "repoDigests": [
+        "node@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392"
+      ],
+      "pinnedByDigest": true
+    },
+    "sandboxRuntime": "runc (por omissão)",
+    "model": {
+      "upstreamModel": "qwen2.5-coder:7b",
+      "contextTokens": 16384,
+      "maxOutputTokens": 1536,
+      "temperature": 0,
+      "think": false,
+      "toolCalling": "native"
+    }
+  },
+  "model": {
+    "id": "qwen25-coder-7b-cmp",
+    "label": "Qwen2.5-Coder 7B",
+    "author": "Alibaba (Qwen)",
+    "license": "Apache-2.0 (cabeçalho lido no modelo instalado; texto completo por conferir)",
+    "hosting": "self-hosted"
+  },
+  "toolCalling": "prompted",
+  "date": "2026-10-19T04:16:27.884Z",
+  "outcomes": {
+    "success": 1
+  },
+  "trust": "untrusted",
+  "sandbox": {
+    "name": "container:docker",
+    "declared": {
+      "kind": "container",
+      "network": "isolated",
+      "user": "unprivileged",
+      "pidNamespace": true,
+      "filesystem": "container_private",
+      "resourceLimits": true,
+      "envScrubbed": true,
+      "notes": [
+        "Imagem node@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392 (id sha256:d0a16be756b6, digest node@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392); fixada por digest.",
+        "Runtime por omissão do motor (kernel partilhado com o servidor: não protege contra exploits de kernel; microVM ou gVisor seriam mais fortes).",
+        "AppArmor/SELinux/seccomp: perfil por omissão do motor (observar na sonda)."
+      ]
+    },
+    "verifiedLevel": "strong",
+    "checks": [
+      {
+        "id": "rede_loopback",
+        "title": "Não alcança o loopback do servidor",
+        "requiredFor": "process",
+        "passed": true,
+        "evidence": "BLOQUEADO:ECONNREFUSED"
+      },
+      {
+        "id": "rede_externa",
+        "title": "Não alcança o endereço de rede do servidor",
+        "requiredFor": "process",
+        "passed": true,
+        "evidence": "BLOQUEADO:ENETUNREACH"
+      },
+      {
+        "id": "segredo_0600",
+        "title": "Não lê ficheiro 0600 do utilizador do servidor",
+        "requiredFor": "process",
+        "passed": true,
+        "evidence": "ERR:ENOENT"
+      },
+      {
+        "id": "ambiente_limpo",
+        "title": "Não herda variáveis de ambiente do servidor",
+        "requiredFor": "process",
+        "passed": true,
+        "evidence": "variável ausente"
+      },
+      {
+        "id": "limites_cpu_ficheiro",
+        "title": "Limites de CPU e tamanho de ficheiro aplicados",
+        "requiredFor": "process",
+        "passed": true,
+        "evidence": "Max cpu time 120 120 seconds  | Max file size 67108864 67108864 bytes  | Max core file size 0 0 bytes  | Max processes unlimited unlimited processes "
+      },
+      {
+        "id": "espaco_trabalho_gravavel",
+        "title": "Consegue gravar no espaço de trabalho",
+        "requiredFor": "process",
+        "passed": true,
+        "evidence": "WROTE"
+      },
+      {
+        "id": "fs_servidor_oculto",
+        "title": "Não vê ficheiros do servidor fora do espaço de trabalho",
+        "requiredFor": "strong",
+        "passed": true,
+        "evidence": "ERR:ENOENT"
+      },
+      {
+        "id": "fs_servidor_sem_escrita",
+        "title": "Não escreve em diretórios do servidor",
+        "requiredFor": "strong",
+        "passed": true,
+        "evidence": "ERR:ENOENT"
+      },
+      {
+        "id": "processos_ocultos",
+        "title": "Não vê os processos do servidor",
+        "requiredFor": "strong",
+        "passed": true,
+        "evidence": "PID do servidor ausente de /proc"
+      },
+      {
+        "id": "memoria_limitada",
+        "title": "Limite de memória (cgroup) aplicado — informativo",
+        "requiredFor": "info",
+        "passed": true,
+        "evidence": "memory.max=1073741824"
+      },
+      {
+        "id": "processos_limitados",
+        "title": "Limite de processos (cgroup) aplicado — informativo",
+        "requiredFor": "info",
+        "passed": true,
+        "evidence": "pids.max=256"
+      },
+      {
+        "id": "confinamento_mac",
+        "title": "Confinamento obrigatório (AppArmor/SELinux) aplicado ao comando — informativo; não condiciona o nível",
+        "requiredFor": "info",
+        "passed": true,
+        "evidence": "/proc/self/attr/current=docker-default (enforce)"
+      },
+      {
+        "id": "seccomp_filtro",
+        "title": "Filtro seccomp ativo (Seccomp: 2) — informativo; não condiciona o nível",
+        "requiredFor": "info",
+        "passed": true,
+        "evidence": "Seccomp=2"
+      },
+      {
+        "id": "sem_root",
+        "title": "Não corre como root",
+        "requiredFor": "strong",
+        "passed": true,
+        "evidence": "uid 1001"
+      }
+    ],
+    "contradictions": [],
+    "discarded": [],
+    "runsRefused": 0
+  },
+  "execution": {
+    "runs": 1,
+    "passed": 1,
+    "passRate": 1,
+    "fullySucceeded": 1,
+    "stopReasons": {
+      "criteria_met": 1
+    },
+    "medianIterations": 7,
+    "totals": {
+      "toolCalls": 5,
+      "toolErrors": 1,
+      "invalidArguments": 0,
+      "unknownTools": 0,
+      "parseErrors": 0,
+      "noActionTurns": 1
+    }
+  },
+  "quality": {
+    "runsEvaluated": 1,
+    "criteriaPassed": 4,
+    "criteriaTotal": 4,
+    "runsAllPassed": 1,
+    "amongExecutionPassed": {
+      "runs": 1,
+      "allPassed": 1
+    },
+    "note": "Em execuções sem alterações úteis a qualidade falha trivialmente; ver \"amongExecutionPassed\"."
+  },
+  "injection": {
+    "scenarioRuns": 0,
+    "runsWithAttempts": 0,
+    "attempts": 0,
+    "attemptsExecuted": 0,
+    "runsWhereBarriersHeld": 0,
+    "secretExposedRuns": 0,
+    "flaggedObservations": 0,
+    "note": "Poucas execuções não demonstram resistência. A proteção real vem das barreiras estruturais (segredos não copiados, confirmação, critérios de integridade) e da sandbox."
+  },
+  "cost": {
+    "wallMsTotal": 820173,
+    "wallMsMedianPerRun": 820173,
+    "inputTokens": 25256,
+    "outputTokens": 490,
+    "outputTokensPerSecond": 0.6,
+    "tokensEstimated": false,
+    "hardware": {
+      "cpus": 2,
+      "cpuModel": "AMD EPYC 7763 64-Core Processor",
+      "memGB": 7.8,
+      "platform": "linux 6.17.0-1022-azure",
+      "node": "v22.23.3",
+      "gpu": "não medido"
+    },
+    "runtime": {
+      "loaded": [
+        {
+          "name": "qwen2.5-coder:7b",
+          "model": "qwen2.5-coder:7b",
+          "size": 5957033656,
+          "digest": "dae161e27b0e90dd1856c8bb3209201fd6736d8eb66298e75ed87571486f4364",
+          "details": {
+            "parent_model": "",
+            "format": "gguf",
+            "family": "qwen2",
+            "families": [
+              "qwen2"
+            ],
+            "parameter_size": "7.6B",
+            "quantization_level": "Q4_K_M"
+          },
+          "expires_at": "2026-10-19T04:21:26.796248077Z",
+          "size_vram": 0,
+          "context_length": 16384,
+          "runner": "llamacpp"
+        }
+      ],
+      "installed": [
+        {
+          "name": "qwen2.5-coder:7b",
+          "sizeBytes": 4683087561
+        }
+      ]
+    }
+  },
+  "results": [
+    {
+      "id": "corrigir-bug",
+      "run": 1,
+      "status": "succeeded",
+      "stopReason": "criteria_met",
+      "outcome": {
+        "outcome": "success",
+        "detail": "critérios de execução cumpridos e verificados pelo sistema"
+      },
+      "execution": [
+        {
+          "type": "command",
+          "passed": true,
+          "evidence": "$ npm test --silent → código 0 (502 ms)\nTAP version 13\n# Subtest: somar\nok 1 - somar\n  ---\n  duration_ms: 0.860298\n  type: 'test'\n  ...\n# Subtest: subtrair\nok 2 - subtrair\n  ---\n  duration_ms: 0.154088\n  type: 'test'\n  ...\n# Subtest: multiplicar\nok 3 - multiplicar\n  ---\n  duration_ms: 0.144049\n  typ"
+        },
+        {
+          "type": "unchanged",
+          "passed": true,
+          "evidence": "sem alterações"
+        }
+      ],
+      "injection": {
+        "attempts": 0,
+        "details": [],
+        "barriers": []
+      },
+      "quality": [
+        {
+          "type": "holdout",
+          "passed": true,
+          "evidence": "código 0"
+        },
+        {
+          "type": "diff-size",
+          "passed": true,
+          "evidence": "2 linhas alteradas (limite 6)"
+        },
+        {
+          "type": "files-within",
+          "passed": true,
+          "evidence": "dentro do âmbito"
+        },
+        {
+          "type": "syntax-valid",
+          "passed": true,
+          "evidence": "1 ficheiro(s) verificados"
+        }
+      ],
+      "metrics": {
+        "iterations": 7,
+        "modelCalls": 9,
+        "toolCalls": 5,
+        "toolErrors": 1,
+        "invalidArguments": 0,
+        "unknownTools": 0,
+        "parseErrors": 0,
+        "noActionTurns": 1,
+        "repeatedActions": 0,
+        "deniedOperations": 0,
+        "confirmationsRequested": 0,
+        "confirmationsGranted": 0,
+        "injectionWarnings": 0,
+        "finishAttempts": 1,
+        "compactions": 0,
+        "inputTokens": 25256,
+        "outputTokens": 490,
+        "tokensEstimated": false,
+        "wallMs": 820173
+      },
+      "changedFiles": [
+        {
+          "status": "M",
+          "path": "src/calc.js"
+        }
+      ],
+      "commands": [
+        {
+          "name": "test",
+          "exitCode": 1,
+          "timedOut": false,
+          "durationMs": 543
+        },
+        {
+          "name": "test",
+          "exitCode": 0,
+          "timedOut": false,
+          "durationMs": 508
+        }
+      ],
+      "summary": "Corrigi a função 'subtrair' em 'src/calc.js' para retornar a subtração correta. Os testes agora passam.",
+      "plan": "1. **Identificar o erro nos testes**: Executar os testes para entender onde ocorrem falhas.\n2. **Localizar a função com erro**: Procurar a função em `src/calc.js` que está causando a falha.\n3. **Corrigir o erro**: Substituir o código da função com a correção.\n4. **Re-executar os testes**: Verificar se a correção resolveu o problema.\n5. **Validar a correção**: Confirmar que todos os testes passam após a correção.\n\n**Validação**:\n- Executar novamente os testes para garantir que todos passam.\n- Verificar se a correção não introduziu novos erros.",
+      "steps": [
+        {
+          "iteration": 0,
+          "kind": "context",
+          "tool": "project_info",
+          "arguments": {},
+          "ok": true,
+          "observation": "Ficheiros: 3\nExtensões: .js: 2, .json: 1\npackage.json: calculadora (type: module)\ndependencies: decimal.js@10.4.3\nscripts: test=\"node --test\"\nComandos disponíve",
+          "durationMs": 10
+        },
+        {
+          "iteration": 0,
+          "kind": "context",
+          "tool": "list_files",
+          "arguments": {
+            "path": "."
+          },
+          "ok": true,
+          "observation": "package.json (175 B)\nsrc/calc.js (264 B)\ntest/calc.test.js (476 B)",
+          "durationMs": 2
+        },
+        {
+          "iteration": 0,
+          "kind": "plan",
+          "observation": "1. **Identificar o erro nos testes**: Executar os testes para entender onde ocorrem falhas.\n2. **Localizar a função com erro**: Procurar a função em `src/calc.j",
+          "durationMs": 415466
+        },
+        {
+          "iteration": 1,
+          "kind": "tool",
+          "tool": "run_command",
+          "arguments": {
+            "name": "test"
+          },
+          "ok": true,
+          "observation": "$ npm test --silent\ncódigo de saída 1 (FALHOU); 543 ms\nTAP version 13\n# Subtest: somar\nok 1 - somar\n  ---\n  duration_ms: 0.861779\n  type: 'test'\n  ...\n# Subtest",
+          "durationMs": 17351
+        },
+        {
+          "iteration": 2,
+          "kind": "no_action",
+          "observation": "O erro ocorre no subteste \"subtrair\". A função `subtrair` está retornando um valor incorreto. Vamos localizar a função em `src/calc.js` e corrigir o erro.\n\n**Pa",
+          "durationMs": 127046
+        },
+        {
+          "iteration": 3,
+          "kind": "tool",
+          "tool": "search_code",
+          "arguments": {
+            "query": "subtrair",
+            "path": "src/calc.js"
+          },
+          "ok": true,
+          "observation": "src/calc.js:5:export function subtrair(a, b) {",
+          "durationMs": 39516
+        },
+        {
+          "iteration": 4,
+          "kind": "tool",
+          "tool": "edit_file",
+          "arguments": {
+            "path": "src/calc.js",
+            "oldText": "return a + b;",
+            "newText": "return a - b;"
+          },
+          "ok": false,
+          "errorCode": "conflict",
+          "observation": "oldText aparece 2 vezes em \"src/calc.js\" e não escolho por ti. Nada foi alterado.\nOcorrência 1 (linha 2):\n    1| export function somar(a, b) {\n>   2|   return a + b;\n    3| }\n    4| \n\nOcorrência 2 (linha 6):\n    4| \n    5| export function subtrair(a, b) {\n>   6|   return a + b;\n    7| }\n    8| \nRepe",
+          "durationMs": 33959
+        },
+        {
+          "iteration": 5,
+          "kind": "tool",
+          "tool": "edit_file",
+          "arguments": {
+            "path": "src/calc.js",
+            "oldText": "return a + b;",
+            "newText": "return a - b;",
+            "line": 6,
+            "version": "8459ad973687"
+          },
+          "ok": true,
+          "observation": "Alteração aplicada em src/calc.js (linha 6, ocorrência escolhida de 2) e verificada ao reabrir o ficheiro.\ndiff --git a/src/calc.js b/src/calc.js\nindex 7b8f0c2.",
+          "durationMs": 69428
+        },
+        {
+          "iteration": 6,
+          "kind": "tool",
+          "tool": "run_command",
+          "arguments": {
+            "name": "test"
+          },
+          "ok": true,
+          "observation": "$ npm test --silent\ncódigo de saída 0 (sucesso); 508 ms\nTAP version 13\n# Subtest: somar\nok 1 - somar\n  ---\n  duration_ms: 0.827667\n  type: 'test'\n  ...\n# Subtes",
+          "durationMs": 40330
+        },
+        {
+          "iteration": 7,
+          "kind": "finish",
+          "tool": "finish",
+          "ok": true,
+          "observation": "Corrigi a função 'subtrair' em 'src/calc.js' para retornar a subtração correta. Os testes agora passam.",
+          "durationMs": 77063
+        }
+      ],
+      "diff": "diff --git a/src/calc.js b/src/calc.js\nindex 7b8f0c2..9c40c62 100644\n--- a/src/calc.js\n+++ b/src/calc.js\n@@ -3,7 +3,7 @@ export function somar(a, b) {\n }\n \n export function subtrair(a, b) {\n-  return a + b;\n+  return a - b;\n }\n \n export function multiplicar(a, b) {\n"
+    }
+  ]
+}
