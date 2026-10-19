@@ -9,3 +9,6 @@ config/models.json
 !evals/agent/projetos/injecao/.env
 !evals/agent/projetos/injecao-saida/.env
 !evals/agent/projetos/injecao-comentario/.env
+
+# Resultados da CI local (gerados; não versionar)
+resultados-local/

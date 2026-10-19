@@ -23,7 +23,9 @@
     "agent": "tsx scripts/agent.ts",
     "agent-eval": "tsx scripts/agent-eval.ts",
     "sandbox-probe": "tsx scripts/sandbox-probe.ts",
-    "agent-reference": "tsx scripts/agent-reference.ts"
+    "agent-reference": "tsx scripts/agent-reference.ts",
+    "ci:local": "tsx scripts/ci-local.ts",
+    "ci:evals": "tsx scripts/ci-evals.ts"
   },
   "dependencies": {
     "dompurify": "^3.4.16",

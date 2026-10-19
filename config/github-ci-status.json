@@ -1,0 +1,7 @@
+{
+  "state": "blocked",
+  "reason": "execução de jobs recusada pelo GitHub: pagamentos recentes falharam ou limite de gastos por aumentar (os jobs nem arrancam)",
+  "since": "2026-10-19",
+  "lastVerifiedBy": "gh api .../check-runs/<id>/annotations nos runs 39200568018/021/178 (commit b5a5dd4)",
+  "note": "Mudar para \"ok\" apenas depois de uma execução do workflow CI concluir com sucesso no GitHub."
+}
