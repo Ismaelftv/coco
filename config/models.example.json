@@ -5,7 +5,9 @@
       "kind": "ollama",
       "baseUrl": "http://127.0.0.1:11434",
       "hosting": "self-hosted",
-      "extraBody": { "keep_alive": "30m" }
+      "extraBody": {
+        "keep_alive": "30m"
+      }
     },
     {
       "id": "vllm-gpu",
@@ -13,7 +15,11 @@
       "baseUrl": "http://127.0.0.1:8000/v1",
       "hosting": "self-hosted",
       "apiKeyEnv": "VLLM_API_KEY",
-      "extraBody": { "chat_template_kwargs": { "enable_thinking": false } }
+      "extraBody": {
+        "chat_template_kwargs": {
+          "enable_thinking": false
+        }
+      }
     },
     {
       "id": "openai",
@@ -70,5 +76,13 @@
       "contextTokens": 128000,
       "maxOutputTokens": 4096
     }
-  ]
+  ],
+  "images": {
+    "label": "Imagens locais (LocalAI)",
+    "baseUrl": "http://127.0.0.1:8080/v1",
+    "hosting": "self-hosted",
+    "model": "stablediffusion",
+    "size": "512x512",
+    "timeoutMs": 900000
+  }
 }

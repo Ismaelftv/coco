@@ -10,7 +10,9 @@ import { createAuth, type AuthUser } from './modules/auth.ts';
 import { registerChat } from './modules/chat.ts';
 import { registerConversations } from './modules/conversations.ts';
 import { registerFiles } from './modules/files.ts';
+import { registerImages } from './modules/images.ts';
 import { registerImport } from './modules/import.ts';
+import type { ImageGenerator } from './providers/images.ts';
 import type { ModelProvider } from './providers/types.ts';
 import { createStatic } from './static.ts';
 import type { ObjectStorage } from './storage/storage.ts';
@@ -21,6 +23,7 @@ export interface AppDeps {
   provider: ModelProvider;
   storage: ObjectStorage;
   staticDir: string;
+  images?: ImageGenerator | null;
   log?: (line: string) => void;
 }
 
@@ -56,6 +59,7 @@ export function createApp(deps: AppDeps): App {
   const chat = registerChat(router, db, provider, storage, { log });
   registerFiles(router, db, storage, log);
   registerImport(router, db, storage);
+  const images = registerImages(router, db, storage, deps.images ?? null, { log });
   router.add('GET', '/api/models', ({ res }) => sendJson(res, 200, { models: provider.models }), { auth: true });
   router.add(
     'GET',
@@ -121,5 +125,9 @@ export function createApp(deps: AppDeps): App {
     }
   });
 
-  return { server, shutdown: () => chat.shutdown() };
+  return { server, shutdown: async () => {
+      images.shutdown();
+      await chat.shutdown();
+    },
+  };
 }

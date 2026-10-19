@@ -26,6 +26,10 @@ interface Props {
   onRetryModels(): void;
   onSend(text: string, files: FileInfo[]): boolean;
   onStop(): void;
+  imagesAvailable: boolean;
+  imageNote: string;
+  creatingImage: boolean;
+  onCreateImage(prompt: string): boolean;
   autoFocusKey: string;
   /** Quem gera as respostas (mostrado por baixo da caixa de texto). */
   modelNote: string;
@@ -38,6 +42,7 @@ export function Composer(props: Props) {
   const [text, setText] = useState('');
   const [attachments, setAttachments] = useState<DraftAttachment[]>([]);
   const [dragging, setDragging] = useState(false);
+  const [imageMode, setImageMode] = useState(false);
   const textarea = useRef<HTMLTextAreaElement | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
   const uploads = useRef(new Map<string, UploadHandle>());
@@ -103,6 +108,10 @@ export function Composer(props: Props) {
 
   const submit = () => {
     if (isGenerating || sendDisabled) return;
+    if (imageMode) {
+      if (ready.length === 0 && props.onCreateImage(text.trim())) setText('');
+      return;
+    }
     if (onSend(text.trim(), ready.map((a) => a.file))) {
       setText('');
       setAttachments([]);
@@ -169,7 +178,7 @@ export function Composer(props: Props) {
           ref={textarea}
           className="composer__input"
           rows={1}
-          placeholder="Escreve uma mensagem…"
+          placeholder={imageMode ? 'Descreve a imagem que queres criar…' : 'Escreve uma mensagem…'}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
@@ -205,6 +214,18 @@ export function Composer(props: Props) {
             >
               <Icon name="paperclip" />
             </button>
+            {props.imagesAvailable ? (
+              <button
+                type="button"
+                className={imageMode ? 'chip-toggle is-on' : 'chip-toggle'}
+                aria-pressed={imageMode}
+                onClick={() => setImageMode((v) => !v)}
+                disabled={isGenerating}
+                title={`Criar uma imagem a partir do texto (${props.imageNote}). Pode demorar vários minutos.`}
+              >
+                <Icon name="image" size={14} /> Criar imagem
+              </button>
+            ) : null}
             <ModelPicker
               models={props.models}
               selected={props.selectedModel}
@@ -220,7 +241,7 @@ export function Composer(props: Props) {
               </span>
             ) : null}
             {isGenerating ? (
-              <button type="button" className="send-btn send-btn--stop" onClick={onStop} aria-label="Parar geração">
+              <button type="button" className="send-btn send-btn--stop" onClick={onStop} aria-label={props.creatingImage ? 'Cancelar criação da imagem' : 'Parar geração'}>
                 <Icon name="stop" />
               </button>
             ) : (
@@ -239,7 +260,11 @@ export function Composer(props: Props) {
         {dragging ? <div className="composer__drop">Larga os ficheiros aqui</div> : null}
       </div>
       <p id="composer-hint" className="composer-hint">
-        Enter envia · Shift+Enter nova linha · {props.modelNote}
+        {props.creatingImage
+          ? 'A criar a imagem… em CPU pode demorar vários minutos. Podes cancelar.'
+          : imageMode
+            ? `Modo imagem: o texto vai para ${props.imageNote}. Enter cria · pode demorar vários minutos.`
+            : `Enter envia · Shift+Enter nova linha · ${props.modelNote}`}
       </p>
     </div>
   );

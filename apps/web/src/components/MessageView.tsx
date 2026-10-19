@@ -48,7 +48,9 @@ export const MessageView = memo(function MessageView({ message, isLast, canRegen
         </div>
       ) : null}
 
-      {message.content ? (
+      {message.files.length ? <FileList files={message.files} /> : null}
+
+      {message.content && !(message.files.length && message.content.startsWith('[Imagem criada')) ? (
         <div className={streaming ? 'msg__body is-streaming' : 'msg__body'}>
           <Markdown source={message.content} />
         </div>

@@ -4,6 +4,7 @@ import { loadConfig } from './config.ts';
 import { createDb } from './db/db.ts';
 import { migrate } from './db/migrate.ts';
 import { runMaintenance } from './modules/maintenance.ts';
+import { createImageGenerator } from './providers/images.ts';
 import { loadCatalog, parseCatalog } from './providers/catalog.ts';
 import { createMockProvider } from './providers/mock.ts';
 import { createModelRegistry } from './providers/registry.ts';
@@ -24,6 +25,8 @@ const models = createModelRegistry({
 });
 await models.refresh();
 for (const m of models.models) log(`[modelos] ${m.id} (${m.hosting}): ${m.status}${m.statusDetail ? ` — ${m.statusDetail}` : ''}`);
+const images = catalog.images ? createImageGenerator(catalog.images) : null;
+if (images) log(`[imagens] ${images.label}: ${images.model} (${images.size})`);
 const stopHealthChecks = models.startHealthChecks(config.MODEL_HEALTH_INTERVAL_MS);
 const { server, shutdown } = createApp({
   config,
@@ -31,6 +34,7 @@ const { server, shutdown } = createApp({
   provider: models,
   storage,
   staticDir: fileURLToPath(new URL('../dist', import.meta.url)),
+  images,
   log,
 });
 

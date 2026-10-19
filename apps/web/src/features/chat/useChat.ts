@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import type { FileInfo, ModelInfo } from '../../../../../shared/contract.ts';
+import type { Capabilities, FileInfo, ModelInfo } from '../../../../../shared/contract.ts';
 import { api, HttpError } from '../../lib/api.ts';
 import { streamChat, type SendBody } from './api.ts';
 import { chatReducer, initialChatState } from './store.ts';
@@ -30,6 +30,10 @@ export function useChat() {
   const [preferredModel, setPreferredModel] = useState<string | null>(null);
   const [notices, setNotices] = useState<Notice[]>([]);
 
+  const [capabilities, setCapabilities] = useState<Capabilities>({ images: { available: false } });
+  const [imageJob, setImageJob] = useState<{ conversationId: string } | null>(null);
+  const imageAbort = useRef<AbortController | null>(null);
+
   const abortRef = useRef<AbortController | null>(null);
   const pendingDelta = useRef('');
   const frame = useRef<number | null>(null);
@@ -56,6 +60,10 @@ export function useChat() {
     return () => controller.abort();
   }, []);
   useEffect(() => loadModels(), [loadModels]);
+
+  useEffect(() => {
+    api.capabilities().then(setCapabilities).catch(() => undefined); // sem capacidades = sem imagens
+  }, []);
 
   // ---- Lista de conversas ----
   const loadList = useCallback((cursor: string | null = null) => {
@@ -276,6 +284,41 @@ export function useChat() {
     [run, selectedModel],
   );
 
+  /** Cria uma imagem a partir de um texto. Demora (CPU): o pedido fica aberto e pode ser cancelado. */
+  const createImage = useCallback(
+    (prompt: string) => {
+      const current = stateRef.current;
+      const text = prompt.trim();
+      if (!text || current.generation || imageAbort.current || !capabilities.images.available || !selectedModel) return false;
+      let conversation: Conversation | undefined = current.activeId ? current.conversations[current.activeId] : undefined;
+      if (conversation && !conversation.loaded) return false;
+      if (!conversation) {
+        const id = newId();
+        dispatch({ type: 'create', id, model: selectedModel, now: Date.now() });
+        conversation = { id, title: 'Nova conversa', createdAt: Date.now(), updatedAt: Date.now(), model: selectedModel, messages: [], loaded: true };
+      }
+      const conversationId = conversation.id;
+      const model = conversation.model || selectedModel;
+      const controller = new AbortController();
+      imageAbort.current = controller;
+      setImageJob({ conversationId });
+      void (async () => {
+        try {
+          await ensurePersisted(conversationId, model);
+          await api.createImage(conversationId, { prompt: text, userMessageId: newId(), assistantMessageId: newId() }, controller.signal);
+          await fetchConversation(conversationId);
+        } catch (err) {
+          if (!controller.signal.aborted) notify(`Não foi possível criar a imagem: ${(err as Error).message}`);
+        } finally {
+          if (imageAbort.current === controller) imageAbort.current = null;
+          setImageJob(null);
+        }
+      })();
+      return true;
+    },
+    [capabilities, selectedModel, ensurePersisted, fetchConversation, notify],
+  );
+
   /** Repete (após erro) ou regenera a última resposta do assistente. */
   const regenerate = useCallback(
     (messageId: string) => {
@@ -303,8 +346,14 @@ export function useChat() {
     [run, selectedModel],
   );
 
-  const stop = useCallback(() => abortRef.current?.abort(), []);
-  useEffect(() => () => abortRef.current?.abort(), []);
+  const stop = useCallback(() => {
+    abortRef.current?.abort();
+    imageAbort.current?.abort();
+  }, []);
+  useEffect(() => () => {
+    abortRef.current?.abort();
+    imageAbort.current?.abort();
+  }, []);
 
   return {
     state,
@@ -319,7 +368,10 @@ export function useChat() {
     search,
     selectedModel,
     chooseModel,
-    isGenerating: state.generation !== null,
+    isGenerating: state.generation !== null || imageJob !== null,
+    creatingImage: imageJob !== null,
+    capabilities,
+    createImage,
     notices,
     dismissNotice,
     notify,

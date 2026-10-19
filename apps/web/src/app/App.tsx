@@ -251,6 +251,10 @@ function ChatApp({ user, onLogout }: { user: User; onLogout(): Promise<void> }) 
           onSelectModel={chat.chooseModel}
           onRetryModels={chat.reloadModels}
           onSend={chat.send}
+          imagesAvailable={chat.capabilities.images.available}
+          imageNote={chat.capabilities.images.available ? chat.capabilities.images.label : ''}
+          creatingImage={chat.creatingImage}
+          onCreateImage={chat.createImage}
           onStop={chat.stop}
           autoFocusKey={chat.state.activeId ?? 'new'}
           modelNote={modelNote}
