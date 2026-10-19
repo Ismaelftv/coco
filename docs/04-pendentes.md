@@ -34,13 +34,13 @@ Resolvido com a CI no GitHub Actions: driver `pg` oficial, `@types/react`, `pack
 ## Fase 5 — por fazer
 
 1. **Interface web para agentes**: hoje só há CLI (`npm run agent`) e avaliação; falta UI com plano, ações e pedidos de confirmação em tempo real, e persistência das execuções.
-2. **Sandbox para produção**: há contentor (`strong` verificado), mas com kernel partilhado e acesso ao daemon do Docker (equivale a root). Produção multiutilizador exige um serviço de execução separado e microVM/gVisor; falta quota de disco total do espaço de trabalho, imagem fixada por *digest* e dependências do projeto dentro da sandbox (sem rede). Ver `08-isolamento.md`.
+2. **Sandbox para produção**: há contentor (`strong` verificado), mas com kernel partilhado e acesso ao daemon do Docker (equivale a root). Produção multiutilizador exige um serviço de execução separado e microVM/gVisor; a imagem já é fixada por *digest* e há quota de crescimento (aproximada, por polling; não imposta pelo kernel); faltam dependências do projeto dentro da sandbox (sem rede). Ver `08-isolamento.md`.
 3. **Ações externas** (web, `git push`, instalação de dependências) não existem; exigirão confirmação e lista de destinos.
 4. **Avaliação pequena**: 6 tarefas, só JavaScript/Node, 3 cenários de injeção. Crescer em número, linguagens e dificuldade; repetir execuções para medir variância; métricas de qualidade adicionais (lint, cobertura, revisão humana).
 5. **Comandos por projeto**: só `test` deduzido do `package.json`; falta configuração explícita (build, lint, vários runners).
 6. **Defesa contra injeção** é parcial (marcação + deteção heurística); a proteção real vem das barreiras que não dependem do modelo.
 7. **Estimativa de tokens** no limite de contexto do agente continua aproximada.
-8. **Modelo predefinido**: não foi alterado. A decisão exige a comparação 4B vs Coder com mais repetições e hardware adequado (ver `resultados/`).
+8. **Modelo predefinido**: não foi alterado. A decisão exige a comparação 4B vs Coder com mais repetições e hardware adequado (ver `resultados/`). Próximo passo: piloto `corrigir-bug` com `toolsVersion 3` **no computador do utilizador** (`npm run ci:evals -- --model qwen25-coder-7b-cmp --mode native --only corrigir-bug --yes`); este ambiente não tem Ollama nem acesso ao registo de modelos, e o GitHub Actions está bloqueado por faturação (`09-ci-local.md`).
 
 ## Próximas fases
 
