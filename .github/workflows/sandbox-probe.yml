@@ -71,4 +71,7 @@ jobs:
           { grep -E '# SKIP' "$RUNNER_TEMP/boundaries.txt" || true; } | head -6 | while read -r l; do echo "::notice title=saltado ${{ matrix.variant }}::$l"; done
           { grep -E '^\s*not ok' "$RUNNER_TEMP/boundaries.txt" || true; } | head -6 | while read -r l; do echo "::error title=fronteiras ${{ matrix.variant }}::$l"; done
           { grep -E 'isolamento verificado|privilégios:|# imagem:|# confinamento:' "$RUNNER_TEMP/boundaries.txt" || true; } | head -8 | while read -r l; do echo "::notice title=nível ${{ matrix.variant }}::$l"; done
+          # Detalhe das falhas (bloco `not ok ... ---/...` do TAP): os logs não são acessíveis pela API.
+          awk '/^[[:space:]]*not ok/{p=1} p{print} p && /^[[:space:]]*\.\.\.$/{p=0}' "$RUNNER_TEMP/boundaries.txt" | head -c 3500 > "$RUNNER_TEMP/falhas.txt" || true
+          if [ -s "$RUNNER_TEMP/falhas.txt" ]; then echo "::error title=detalhe ${{ matrix.variant }}::$(sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g' "$RUNNER_TEMP/falhas.txt")"; fi
           ! grep -qE '^\s*not ok' "$RUNNER_TEMP/boundaries.txt"
