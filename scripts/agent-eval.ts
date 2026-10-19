@@ -32,8 +32,11 @@ import { join, dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import { z } from 'zod';
 import { categoryOf, runAgent, type AgentReport, type CriterionResult, type SuccessCriterion } from '../server/agent/loop.ts';
+import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { classifyOutcome } from '../server/agent/classify.ts';
 import { selectSandbox, type SandboxChoice } from '../server/agent/sandbox-factory.ts';
-import { detectCommands } from '../server/agent/tools.ts';
+import { detectCommands, TOOLS_VERSION } from '../server/agent/tools.ts';
 import { Workspace } from '../server/agent/workspace.ts';
 import { loadCatalog } from '../server/providers/catalog.ts';
 import { createModelRegistry } from '../server/providers/registry.ts';
@@ -192,12 +195,35 @@ async function main() {
   const outTok = sumBy(ran, (r) => r.report.metrics.outputTokens);
   const runtime = catalog.backends.find((b) => b.id === catalog.models.find((m) => m.id === model.id)?.backend && b.kind === 'ollama');
 
+  const catModel = catalog.models.find((m) => m.id === model.id);
+  const git = (a: string[]) => { try { return execFileSync('git', a, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim(); } catch { return null; } };
+  const outcomes: Record<string, number> = {};
+  const outcomeOf = new Map<AgentReport, ReturnType<typeof classifyOutcome>>();
+  for (const r of done) {
+    const o = classifyOutcome(r.report);
+    outcomeOf.set(r.report, o);
+    outcomes[o.outcome] = (outcomes[o.outcome] ?? 0) + 1;
+  }
   const summary = {
     suite: suite.name,
     suiteVersion: suite.version ?? 1,
+    // Configuração efetiva, para reprodutibilidade. Resultados com toolsVersion ou suiteVersion diferentes NÃO se misturam.
+    config: {
+      commit: process.env.GITHUB_SHA ?? git(['rev-parse', 'HEAD']),
+      toolsVersion: TOOLS_VERSION,
+      suiteSha256: createHash('sha256').update(await readFile(values.tasks!)).digest('hex'),
+      repeat,
+      maxIterations: Number(values['max-iterations']),
+      maxWallSeconds: Number(values['max-wall-seconds']),
+      sandboxImage: 'imageInfo' in sandbox ? (sandbox as unknown as { imageInfo: unknown }).imageInfo : null,
+      sandboxRuntime: process.env.FORJA_SANDBOX_RUNTIME ?? 'runc (por omissão)',
+      model: catModel ? { upstreamModel: catModel.upstreamModel, contextTokens: catModel.contextTokens, maxOutputTokens: catModel.maxOutputTokens, temperature: catModel.temperature ?? null, think: catModel.think, toolCalling: catModel.toolCalling } : null,
+    },
     model: { id: model.id, label: model.label, author: model.author, license: model.license, hosting: model.hosting },
     toolCalling: mode,
     date: new Date().toISOString(),
+    // Causas das execuções (deterministas, a partir de factos do relatório): ver server/agent/classify.ts
+    outcomes,
     trust,
     // 1. SANDBOX — segurança da infraestrutura, independente do modelo.
     sandbox: { name: sandbox.name, declared: sandbox.isolation, verifiedLevel: verdict.level, checks: verdict.checks, contradictions: verdict.contradictions, discarded: selection.skipped, runsRefused: refused.length },
@@ -257,6 +283,7 @@ async function main() {
         ? {
             status: r.report.status,
             stopReason: r.report.stopReason,
+            outcome: outcomeOf.get(r.report),
             execution: byCat(r.report.criteria, 'execution').map((c) => ({ type: c.criterion.type, passed: c.passed, evidence: c.evidence.slice(0, 300) })),
             injection: { attempts: r.report.injection.attempts, details: r.report.injection.details, barriers: byCat(r.report.criteria, 'injection').map((c) => ({ type: c.criterion.type, passed: c.passed, evidence: c.evidence.slice(0, 200) })) },
             quality: r.report.quality.map((c) => ({ type: c.criterion.type, passed: c.passed, evidence: c.evidence.slice(0, 300) })),
@@ -265,7 +292,7 @@ async function main() {
             commands: r.report.commands.map((c) => ({ name: c.name, exitCode: c.exitCode, timedOut: c.timedOut, durationMs: c.durationMs })),
             summary: r.report.summary,
             plan: r.report.plan,
-            steps: r.report.steps.map((s) => ({ ...s, observation: s.observation?.slice(0, 160) })),
+            steps: r.report.steps.map((s) => ({ ...s, observation: s.observation?.slice(0, s.ok === false ? 600 : 160) })),
             diff: r.report.diff.slice(0, 4000),
           }
         : {}),
@@ -276,6 +303,7 @@ async function main() {
   console.log('\n══ Resultados (categorias separadas) ══');
   console.log(`SANDBOX    ${sandbox.name}: nível verificado ${verdict.level.toUpperCase()}${verdict.contradictions.length ? ` · ${verdict.contradictions.length} contradição(ões)` : ''} · execuções recusadas por isolamento insuficiente: ${refused.length}`);
   console.log(`EXECUÇÃO   critérios de execução cumpridos: ${pct(execPassed.length, ran.length)} · concluídas por inteiro: ${pct(summary.execution.fullySucceeded, ran.length)} · paragens: ${JSON.stringify(stopReasons)}`);
+  console.log(`CAUSAS     ${Object.entries(outcomes).map(([k, v]) => `${k}=${v}`).join(' · ') || 'n/d'}`);
   console.log(`QUALIDADE  testes escondidos/diff: execuções com tudo OK ${pct(summary.quality.runsAllPassed, qualityRuns.length)} · entre as que cumpriram a execução ${pct(summary.quality.amongExecutionPassed.allPassed, qualityAmongExec.length)}`);
   console.log(`INJEÇÃO    execuções com tentativa de obedecer: ${pct(summary.injection.runsWithAttempts, injRuns.length)} (ações executadas: ${summary.injection.attemptsExecuted}) · barreiras aguentaram: ${pct(summary.injection.runsWhereBarriersHeld, injRuns.length)} · segredo exposto: ${summary.injection.secretExposedRuns}`);
   console.log(`CUSTO      ${Math.round(wallMs / 1000)} s no total · ${summary.cost.outputTokensPerSecond ?? '?'} tokens/s de saída · ${summary.cost.hardware.cpus} CPU, ${summary.cost.hardware.memGB} GB RAM`);

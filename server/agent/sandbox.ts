@@ -63,6 +63,8 @@ export interface SandboxResult {
   truncated: boolean;
   durationMs: number;
   isolation: IsolationReport;
+  /** O comando foi terminado por exceder o crescimento máximo do espaço de trabalho. */
+  quotaExceeded?: boolean;
 }
 
 export interface Sandbox {

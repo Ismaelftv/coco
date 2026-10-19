@@ -70,5 +70,5 @@ jobs:
           echo "::notice title=fronteiras ${{ matrix.variant }}::$line"
           { grep -E '# SKIP' "$RUNNER_TEMP/boundaries.txt" || true; } | head -6 | while read -r l; do echo "::notice title=saltado ${{ matrix.variant }}::$l"; done
           { grep -E '^\s*not ok' "$RUNNER_TEMP/boundaries.txt" || true; } | head -6 | while read -r l; do echo "::error title=fronteiras ${{ matrix.variant }}::$l"; done
-          { grep -E 'isolamento verificado|privilégios:' "$RUNNER_TEMP/boundaries.txt" || true; } | head -4 | while read -r l; do echo "::notice title=nível ${{ matrix.variant }}::$l"; done
+          { grep -E 'isolamento verificado|privilégios:|# imagem:|# confinamento:' "$RUNNER_TEMP/boundaries.txt" || true; } | head -8 | while read -r l; do echo "::notice title=nível ${{ matrix.variant }}::$l"; done
           ! grep -qE '^\s*not ok' "$RUNNER_TEMP/boundaries.txt"

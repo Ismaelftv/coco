@@ -16,7 +16,7 @@
  * contra exploits de kernel. Ver docs/07-agentes.md. O que esta classe
  * declara só conta depois de verificado por `probeSandbox` (isolation.ts).
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { execFile, spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { chownTree, NOBODY, CappedBuffer, type IsolationReport, type Sandbox, type SandboxResult, type SandboxRunOptions } from './sandbox.ts';
 
@@ -32,6 +32,25 @@ export interface ContainerSandboxOptions {
   maxFileBytes?: number;
   /** Descarregar a imagem se não existir (precisa de rede no daemon, não no comando). */
   pull?: boolean;
+  /** Runtime OCI alternativo, p. ex. `runsc` (gVisor) ou `kata`. Por omissão, o do motor (runc). */
+  runtime?: string;
+  /** Recusar imagens que não estejam referenciadas por digest (`nome@sha256:…`). Também via FORJA_SANDBOX_REQUIRE_DIGEST=1. */
+  requireDigest?: boolean;
+  /** Crescimento máximo, em bytes, do espaço de trabalho durante um comando (vigilância por amostragem; 0 desliga). */
+  quotaBytes?: number;
+}
+
+export const DEFAULT_QUOTA_BYTES = 256 * 1024 * 1024;
+const DIGEST_RE = /@sha256:[0-9a-f]{64}$/;
+
+/** Espaço em disco ocupado por um diretório (como `du -sk`), em bytes. */
+function diskUsage(dir: string): Promise<number> {
+  return new Promise((resolve) => {
+    execFile('du', ['-sk', dir], { timeout: 10_000 }, (err, stdout) => {
+      const kb = Number.parseInt(String(stdout).split(/\s/)[0] ?? '', 10);
+      resolve(err || !Number.isFinite(kb) ? 0 : kb * 1024);
+    });
+  });
 }
 
 export const DEFAULT_SANDBOX_IMAGE = 'node:22-slim';
@@ -58,10 +77,13 @@ export class ContainerSandbox implements Sandbox {
   readonly isolation: IsolationReport;
   private readonly engine: string;
   private readonly image: string;
+  /** Identificação REAL da imagem usada (ID e digests do registo), para reprodutibilidade. */
+  readonly imageInfo: { ref: string; id: string; repoDigests: string[]; pinnedByDigest: boolean };
 
-  private constructor(engine: 'docker' | 'podman', private readonly options: ContainerSandboxOptions) {
+  private constructor(engine: 'docker' | 'podman', private readonly options: ContainerSandboxOptions, info: { id: string; repoDigests: string[] }) {
     this.engine = engine;
     this.image = options.image ?? process.env.FORJA_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
+    this.imageInfo = { ref: this.image, id: info.id, repoDigests: info.repoDigests, pinnedByDigest: DIGEST_RE.test(this.image) };
     this.name = `container:${engine}`;
     this.isolation = {
       kind: 'container',
@@ -71,7 +93,11 @@ export class ContainerSandbox implements Sandbox {
       filesystem: 'container_private',
       resourceLimits: true,
       envScrubbed: true,
-      notes: [`Imagem ${this.image}. Kernel partilhado com o servidor: não protege contra exploits de kernel (microVM seria mais forte).`],
+      notes: [
+        `Imagem ${this.image} (id ${info.id.slice(0, 19)}${info.repoDigests.length ? `, digest ${info.repoDigests[0]}` : ''}); ${this.imageInfo.pinnedByDigest ? 'fixada por digest' : 'referenciada por etiqueta (NÃO fixada por digest)'}.`,
+        this.options.runtime ?? process.env.FORJA_SANDBOX_RUNTIME ? `Runtime: ${this.options.runtime ?? process.env.FORJA_SANDBOX_RUNTIME}.` : 'Runtime por omissão do motor (kernel partilhado com o servidor: não protege contra exploits de kernel; microVM ou gVisor seriam mais fortes).',
+        'AppArmor/SELinux/seccomp: perfil por omissão do motor (observar na sonda).',
+      ],
     };
   }
 
@@ -80,13 +106,24 @@ export class ContainerSandbox implements Sandbox {
     const found = detectContainerEngine(options.engine);
     if (!found.available) throw new Error(`Motor de contentores indisponível (${found.reason}).`);
     const image = options.image ?? process.env.FORJA_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
+    if ((options.requireDigest ?? process.env.FORJA_SANDBOX_REQUIRE_DIGEST === '1') && !DIGEST_RE.test(image)) {
+      throw new Error(`Imagem "${image}" não está fixada por digest (exigido): usa nome@sha256:…`);
+    }
     const have = engineCli(found.engine, ['image', 'inspect', image, '--format', '{{.Id}}']);
     if (have.status !== 0) {
       if (!options.pull) throw new Error(`Imagem "${image}" não existe localmente (use pull: true ou "${found.engine} pull ${image}").`);
       const pulled = engineCli(found.engine, ['pull', '-q', image], 300_000);
       if (pulled.status !== 0) throw new Error(`Não foi possível obter a imagem "${image}": ${pulled.stderr.trim().slice(0, 200)}`);
     }
-    return new ContainerSandbox(found.engine, options);
+    const insp = engineCli(found.engine, ['image', 'inspect', image, '--format', '{{.Id}}|{{json .RepoDigests}}']);
+    const [id = '', digests = '[]'] = insp.stdout.trim().split('|');
+    let repoDigests: string[] = [];
+    try {
+      repoDigests = (JSON.parse(digests) as string[] | null) ?? [];
+    } catch {
+      /* sem digests (imagem local) */
+    }
+    return new ContainerSandbox(found.engine, options, { id, repoDigests });
   }
 
   async run(o: SandboxRunOptions): Promise<SandboxResult> {
@@ -109,8 +146,10 @@ export class ContainerSandbox implements Sandbox {
       NODE_OPTIONS: '--max-old-space-size=768',
       ...o.env,
     };
+    const runtime = this.options.runtime ?? process.env.FORJA_SANDBOX_RUNTIME;
     const args = [
       'run', '--rm', '--name', name, '--init',
+      ...(runtime ? ['--runtime', runtime] : []),
       '--network', 'none',
       '--read-only',
       '--cap-drop', 'ALL',
@@ -134,6 +173,9 @@ export class ContainerSandbox implements Sandbox {
     const err = new CappedBuffer(Math.max(1024, Math.floor(o.maxOutputBytes / 2)));
     let timedOut = false;
     let cancelled = false;
+    let quotaExceeded = false;
+    const quota = this.options.quotaBytes ?? DEFAULT_QUOTA_BYTES;
+    const baseline = quota > 0 ? await diskUsage(o.root) : 0;
 
     return new Promise<SandboxResult>((resolvePromise) => {
       const child = spawn(this.engine, args, { stdio: ['ignore', 'pipe', 'pipe'] });
@@ -151,10 +193,28 @@ export class ContainerSandbox implements Sandbox {
         kill();
       };
       o.signal?.addEventListener('abort', onAbort, { once: true });
+      // Quota do espaço de trabalho: vigilância por amostragem (NÃO imposta pelo kernel): quem escreve
+      // mais depressa do que o intervalo pode ultrapassar o limite antes de ser parado.
+      let watching = quota > 0;
+      const poll = async () => {
+        while (watching) {
+          await new Promise((r) => setTimeout(r, 300));
+          if (!watching) break;
+          const used = await diskUsage(o.root);
+          if (watching && used - baseline > quota) {
+            quotaExceeded = true;
+            err.push(`\n[forja] limite de crescimento do espaço de trabalho excedido (+${Math.round((used - baseline) / 2 ** 20)} MiB > ${Math.round(quota / 2 ** 20)} MiB): comando terminado.`);
+            kill();
+            break;
+          }
+        }
+      };
+      if (quota > 0) void poll();
       child.stdout.setEncoding('utf8').on('data', (d: string) => out.push(d));
       child.stderr.setEncoding('utf8').on('data', (d: string) => err.push(d));
       const finish = (exitCode: number | null, signal: string | null, extraErr?: string) => {
         clearTimeout(timer);
+        watching = false;
         o.signal?.removeEventListener('abort', onAbort);
         // Garante que não fica nada a correr (idempotente se o contentor já saiu).
         spawnSync(this.engine, ['rm', '-f', name], { timeout: 10_000, stdio: 'ignore' });
@@ -170,6 +230,7 @@ export class ContainerSandbox implements Sandbox {
           truncated: out.truncated || err.truncated,
           durationMs: Date.now() - started,
           isolation: this.isolation,
+          ...(quotaExceeded ? { quotaExceeded: true } : {}),
         });
       };
       child.on('error', (e) => finish(null, null, `Falha ao iniciar o motor de contentores: ${e.message}`));

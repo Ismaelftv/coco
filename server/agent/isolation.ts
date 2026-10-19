@@ -58,6 +58,8 @@ out.workWrite = t(() => { fs.writeFileSync('probe-escrita.txt', 'x'); return 'WR
 out.env = process.env.FORJA_PROBE_SEGREDO || null;
 out.pidVisible = t(() => fs.readdirSync('/proc').includes(String(P.serverPid)));
 out.cgroup = t(() => ({ memory: fs.readFileSync('/sys/fs/cgroup/memory.max', 'utf8').trim(), pids: fs.readFileSync('/sys/fs/cgroup/pids.max', 'utf8').trim() }));
+out.mac = t(() => fs.readFileSync('/proc/self/attr/current', 'utf8').replace(/\0/g, '').trim());
+out.seccomp = t(() => (fs.readFileSync('/proc/self/status', 'utf8').split('\n').find((l) => l.startsWith('Seccomp:')) || '').split(/\s+/)[1] || 'desconhecido');
 out.limits = t(() => fs.readFileSync('/proc/self/limits', 'utf8').split('\n').filter((l) => /^Max (cpu time|file size|processes|core file size)/.test(l)));
 const tryConnect = (host) => new Promise((resolve) => {
   if (!host) return resolve('SEM_ENDERECO');
@@ -92,6 +94,8 @@ interface ChildReport {
   limits: string[] | string;
   netLoopback: string;
   netExternal: string;
+  mac?: string;
+  seccomp?: string;
   cgroup: { memory: string; pids: string } | string;
 }
 
@@ -158,6 +162,8 @@ function judge(sandbox: Sandbox, c: ChildReport, probedAt: string, serverUid: nu
     { id: 'processos_ocultos', title: 'Não vê os processos do servidor', requiredFor: 'strong', passed: c.pidVisible === false, evidence: c.pidVisible === false ? 'PID do servidor ausente de /proc' : String(c.pidVisible) },
     { id: 'memoria_limitada', title: 'Limite de memória (cgroup) aplicado — informativo', requiredFor: 'info', passed: typeof c.cgroup === 'object' && /^\d+$/.test(c.cgroup.memory), evidence: typeof c.cgroup === 'object' ? `memory.max=${c.cgroup.memory}` : String(c.cgroup) },
     { id: 'processos_limitados', title: 'Limite de processos (cgroup) aplicado — informativo', requiredFor: 'info', passed: typeof c.cgroup === 'object' && /^\d+$/.test(c.cgroup.pids), evidence: typeof c.cgroup === 'object' ? `pids.max=${c.cgroup.pids}` : String(c.cgroup) },
+    { id: 'confinamento_mac', title: 'Confinamento obrigatório (AppArmor/SELinux) aplicado ao comando — informativo; não condiciona o nível', requiredFor: 'info', passed: typeof c.mac === 'string' && /\((enforce|complain)\)|container_t|docker-default|crio-default|cri-containerd/.test(c.mac) && !/^unconfined/.test(c.mac), evidence: `/proc/self/attr/current=${c.mac ?? 'n/d'}` },
+    { id: 'seccomp_filtro', title: 'Filtro seccomp ativo (Seccomp: 2) — informativo; não condiciona o nível', requiredFor: 'info', passed: c.seccomp === '2', evidence: `Seccomp=${c.seccomp ?? 'n/d'}` },
     { id: 'sem_root', title: 'Não corre como root', requiredFor: 'strong', passed: c.uid !== 0, evidence: `uid ${c.uid}` },
   ];
   const basicOk = checks.filter((k) => k.requiredFor === 'process').every((k) => k.passed);

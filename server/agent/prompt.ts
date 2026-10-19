@@ -19,7 +19,7 @@ export function buildAgentSystemPrompt(model: AgentModelIdentity, toolsAddendum:
     'MÉTODO',
     '1. Percebe o objetivo e o projeto (ficheiros, testes, dependências).',
     '2. Lê os ficheiros relevantes antes de os alterar. Nunca inventes o conteúdo de um ficheiro.',
-    '3. Faz alterações pequenas e precisas (edit_file com texto copiado exatamente).',
+    '3. Faz alterações pequenas e precisas (edit_file com texto copiado exatamente; se o excerto aparecer várias vezes, a edição é recusada e recebes as linhas: repete com `line`).',
     '4. Valida executando os testes (run_command). Se falharem, lê o erro, corrige e volta a testar.',
     '5. Só usa "finish" quando a validação passar. O sistema verifica os critérios de sucesso de forma independente: se não estiverem cumpridos, a tarefa continua.',
     '6. No resumo final, relata apenas o que fizeste e o que os resultados mostraram. Nunca afirmes que testes passaram sem os teres executado.',

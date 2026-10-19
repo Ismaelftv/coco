@@ -17,7 +17,7 @@
 import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { chmod, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { createServer, type Server } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -276,16 +276,15 @@ describe('recursos: CPU, memória, processos, disco, duração', () => {
     assert.ok(tam <= 8 * 1024 * 1024, `ficheiro no espaço de trabalho com ${tam} bytes (limite 8 MiB)`);
   });
 
-  test('LIMITAÇÃO CONHECIDA (afirmada, não escondida): não há quota para o TOTAL do espaço de trabalho', async (t) => {
+  test('crescimento abaixo da quota (256 MiB por omissão) é permitido; a quota é por amostragem, não do kernel (ver teste de quota)', async (t) => {
     const c = need(t);
     if (!c) return;
-    // Muitos ficheiros abaixo do limite por ficheiro: ocupa disco do anfitrião sem ser impedido.
-    // O teste existe para que ninguém afirme o contrário; se uma quota for implementada, deve falhar aqui e ser atualizado.
     const r = await sh(c, `
       const fs = require('fs'); const b = Buffer.alloc(1024 * 1024, 1);
       for (let i = 0; i < 20; i++) fs.writeFileSync('/work/f' + i, b);
       console.log(JSON.stringify({ ficheiros: fs.readdirSync('/work').length }))`);
-    assert.equal(last(r.stdout).ficheiros, 20, 'sem quota total: 20 MiB gravados sem impedimento');
+    assert.equal(last(r.stdout).ficheiros, 20);
+    assert.equal(r.quotaExceeded, undefined);
   });
 
   test('CPU: o ulimit de tempo de CPU termina um ciclo infinito antes do tempo limite de relógio', async (t) => {
@@ -361,5 +360,80 @@ describe('processos órfãos, tempo limite, limpeza e contorno de limites', () =
     const p = new ProcessSandbox();
     assert.notEqual(p.isolation.filesystem, 'container_private');
     assert.notEqual(p.isolation.kind, 'container');
+  });
+});
+
+describe('lacunas fechadas: quota do espaço de trabalho, digest da imagem, runtime e confinamento', () => {
+  test('quota de crescimento: um comando que enche o espaço de trabalho é terminado e sinalizado', async (t) => {
+    const c = need(t);
+    if (!c) return;
+    const small = ContainerSandbox.create({ quotaBytes: 8 * 1024 * 1024, pull: true });
+    const dir = await work();
+    const r = await small.run({
+      argv: ['node', '-e', "const fs=require('fs'); const b=Buffer.alloc(1024*1024,1); let i=0; setInterval(()=>{ fs.writeFileSync('/work/f'+(i++), b); }, 20);"],
+      cwd: dir, root: dir, timeoutMs: 30_000, maxOutputBytes: 8_000,
+    });
+    assert.equal(r.quotaExceeded, true, `não foi travado: ${r.stdout} ${r.stderr.slice(0, 200)} exit=${r.exitCode}`);
+    assert.equal(r.timedOut, false);
+    assert.match(r.stderr, /limite de crescimento/);
+    const files = (await readdir(dir)).length;
+    // Vigilância por amostragem: pode ultrapassar o limite até ao intervalo seguinte, mas não indefinidamente.
+    assert.ok(files < 150, `escreveu ${files} MiB antes de ser parado (limite 8 MiB, amostragem 300 ms)`);
+    assert.equal(leftovers(), '');
+  });
+
+  test('quota: um comando normal não é afetado (sem falsos positivos)', async (t) => {
+    const c = need(t);
+    if (!c) return;
+    const r = await sh(ContainerSandbox.create({ quotaBytes: 8 * 1024 * 1024, pull: true }), "require('fs').writeFileSync('/work/pequeno.txt', 'x'.repeat(1000)); console.log('ok')");
+    assert.equal(r.quotaExceeded, undefined);
+    assert.equal(r.exitCode, 0);
+  });
+
+  test('imagem: identificada de facto (ID e digests) e a exigência de digest recusa etiquetas', async (t) => {
+    const c = need(t);
+    if (!c) return;
+    assert.match(c.imageInfo.id, /^sha256:[0-9a-f]{64}$/);
+    assert.ok(c.isolation.notes.some((n) => /digest|etiqueta/.test(n)));
+    console.log(`# imagem: ${c.imageInfo.ref} id=${c.imageInfo.id.slice(0, 19)} fixadaPorDigest=${c.imageInfo.pinnedByDigest} repoDigests=${c.imageInfo.repoDigests.join(',') || '-'}`);
+    if (!c.imageInfo.pinnedByDigest) {
+      assert.throws(() => ContainerSandbox.create({ requireDigest: true, pull: true }), /não está fixada por digest/);
+    }
+    // Se há digest de registo, a imagem fixada por digest é aceite e usável.
+    const dg = c.imageInfo.repoDigests[0];
+    if (dg) {
+      const pinned = ContainerSandbox.create({ image: dg, requireDigest: true, pull: true });
+      assert.equal(pinned.imageInfo.pinnedByDigest, true);
+      const r = await sh(pinned, "console.log('ok')");
+      assert.equal(r.exitCode, 0);
+    } else {
+      console.log('# imagem sem digest de registo (imagem local): fixação por digest não exercitada neste anfitrião');
+    }
+  });
+
+  test('confinamento obrigatório (AppArmor/SELinux): REGISTA o estado observado; salta se não houver', async (t) => {
+    const c = need(t);
+    if (!c) return;
+    const r = await sh(c, `
+      const fs = require('fs'); const g = (p) => { try { return fs.readFileSync(p, 'utf8').replace(/\\0/g, '').trim(); } catch (e) { return 'ERR:' + e.code; } };
+      console.log(JSON.stringify({ mac: g('/proc/self/attr/current'), apparmorEnabled: g('/sys/module/apparmor/parameters/enabled') }))`);
+    const o = last(r.stdout) as { mac: string; apparmorEnabled: string };
+    console.log(`# confinamento: attr/current=${o.mac} apparmor.enabled=${o.apparmorEnabled}`);
+    if (!/\((enforce|complain)\)/.test(o.mac) || /^unconfined/.test(o.mac)) {
+      return t.skip(`sem AppArmor/SELinux a confinar o contentor neste anfitrião (attr/current=${o.mac}): propriedade NÃO comprovada`);
+    }
+    assert.match(o.mac, /enforce/);
+  });
+
+  test('runtime alternativo (gVisor/Kata) é transmitido ao motor quando configurado', async (t) => {
+    const c = need(t);
+    if (!c) return;
+    // Um runtime inexistente tem de FALHAR (não cair em silêncio no runc): prova que a opção é aplicada.
+    const bad = ContainerSandbox.create({ runtime: 'forja-runtime-inexistente', pull: true });
+    const dir = await work();
+    const r = await bad.run({ argv: ['node', '-e', "console.log('correu')"], cwd: dir, root: dir, timeoutMs: 20_000, maxOutputBytes: 4000 });
+    assert.notEqual(r.exitCode, 0);
+    assert.doesNotMatch(r.stdout, /correu/);
+    assert.match(r.stderr, /runtime|forja-runtime-inexistente/i);
   });
 });
