@@ -150,7 +150,9 @@ export class ContainerSandbox implements Sandbox {
     const uid = isRoot ? NOBODY : (process.getuid?.() ?? NOBODY);
     const gid = isRoot ? NOBODY : (process.getgid?.() ?? NOBODY);
     if (isRoot) chownTree(o.root, uid, gid);
-    const name = `forja-sbx-${randomBytes(6).toString('hex')}`;
+    // O PID do processo no nome permite verificar "os MEUS contentores" sem confundir com os de outro processo
+    // (por exemplo, ficheiros de teste a correr em paralelo no mesmo anfitrião).
+    const name = `forja-sbx-${process.pid}-${randomBytes(6).toString('hex')}`;
     const mem = `${this.options.memoryMb ?? 1024}m`;
     const env: Record<string, string> = {
       HOME: '/tmp',

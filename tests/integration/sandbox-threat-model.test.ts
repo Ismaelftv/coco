@@ -64,7 +64,7 @@ const need = (t: { skip(m?: string): void }) => {
   t.skip(`contentor indisponível: não comprovado neste anfitrião (${why})`);
   return null;
 };
-const leftovers = () => spawnSync(engine, ['ps', '-a', '--filter', 'name=forja-sbx-', '--format', '{{.Names}}'], { encoding: 'utf8' }).stdout.trim();
+const leftovers = () => spawnSync(engine, ['ps', '-a', '--filter', `name=forja-sbx-${process.pid}-`, '--format', '{{.Names}}'], { encoding: 'utf8' }).stdout.trim();
 
 describe('rede: destinos externos e serviços internos da Forja', () => {
   test('controlo positivo: o MESMO programa alcança um serviço no anfitrião quando corre fora da sandbox', async () => {

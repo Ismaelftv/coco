@@ -214,7 +214,7 @@ describe('contentor: fronteiras individuais', () => {
     }
     await new Promise((res) => setTimeout(res, 2_500)); // um contentor criado tarde apareceria agora
     const engine = detectContainerEngine();
-    const ps = spawnSync(engine.available ? engine.engine : 'docker', ['ps', '--filter', 'name=forja-sbx-', '--format', '{{.Names}}'], { encoding: 'utf8' });
+    const ps = spawnSync(engine.available ? engine.engine : 'docker', ['ps', '--filter', `name=forja-sbx-${process.pid}-`, '--format', '{{.Names}}'], { encoding: 'utf8' });
     assert.equal(ps.stdout.trim(), '', 'ficou um contentor a correr depois de um tempo limite durante o arranque');
   });
 
@@ -224,7 +224,7 @@ describe('contentor: fronteiras individuais', () => {
     const r = await sh(c, 'setInterval(() => {}, 1000)', 1_500);
     assert.equal(r.timedOut, true);
     const engine = detectContainerEngine();
-    const ps = spawnSync(engine.available ? engine.engine : 'docker', ['ps', '--filter', 'name=forja-sbx-', '--format', '{{.Names}}'], { encoding: 'utf8' });
+    const ps = spawnSync(engine.available ? engine.engine : 'docker', ['ps', '--filter', `name=forja-sbx-${process.pid}-`, '--format', '{{.Names}}'], { encoding: 'utf8' });
     assert.equal(ps.stdout.trim(), '', 'contentor ainda a correr após o tempo limite');
   });
 
