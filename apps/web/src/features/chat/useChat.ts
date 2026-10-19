@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { Capabilities, FileInfo, ModelInfo } from '../../../../../shared/contract.ts';
+import { uuid } from '../../lib/uuid.ts';
 import { api, HttpError } from '../../lib/api.ts';
 import { streamChat, type SendBody } from './api.ts';
 import { chatReducer, initialChatState } from './store.ts';
@@ -17,7 +18,7 @@ export interface Notice {
   message: string;
 }
 
-const newId = () => crypto.randomUUID();
+const newId = () => uuid();
 
 export function useChat() {
   const [state, dispatch] = useReducer(chatReducer, initialChatState);

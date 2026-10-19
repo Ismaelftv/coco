@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type DragEvent, type Keyb
 import type { FileInfo } from '../../../../shared/contract.ts';
 import { LIMITS } from '../../../../shared/limits.ts';
 import type { ModelsState } from '../features/chat/useChat.ts';
+import { uuid } from '../lib/uuid.ts';
 import { api, uploadFile, type UploadHandle } from '../lib/api.ts';
 import { formatBytes, rejectionMessage, validateAttachment } from '../lib/attachments.ts';
 import { Icon } from './Icon.tsx';
@@ -71,7 +72,7 @@ export function Composer(props: Props) {
     let count = attachments.filter((a) => a.state !== 'error').length;
     const added: DraftAttachment[] = [];
     for (const file of Array.from(files)) {
-      const key = crypto.randomUUID();
+      const key = uuid();
       const base = { key, name: file.name, size: file.size, progress: 0 };
       const rejection = validateAttachment(file, count);
       if (rejection) {
